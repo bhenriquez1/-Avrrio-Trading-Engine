@@ -15,8 +15,8 @@ export class ClaudeAnalysisService {
   private readonly client: Anthropic | null;
 
   constructor(private readonly config: AvrrioConfig) {
-    this.client = config.claude.apiKey
-      ? new Anthropic({ apiKey: config.claude.apiKey })
+    this.client = config.ai.anthropicApiKey
+      ? new Anthropic({ apiKey: config.ai.anthropicApiKey })
       : null;
   }
 
@@ -31,7 +31,7 @@ export class ClaudeAnalysisService {
     if (!this.client) return offlineAnalysis(snapshot);
 
     const response = await this.client.messages.create({
-      model: this.config.claude.model,
+      model: this.config.ai.claudeModel,
       max_tokens: 1024,
       thinking: { type: "adaptive" },
       system: SYSTEM_PROMPT,

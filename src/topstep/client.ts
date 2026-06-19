@@ -1,16 +1,23 @@
+import { randomUUID } from "node:crypto";
 import type { AvrrioConfig } from "../config.js";
-import type { AccountSummary, Bar, Quote } from "../types.js";
+import type {
+  AccountSummary,
+  Bar,
+  OrderRequest,
+  OrderResult,
+  Quote,
+} from "../types.js";
 
 /**
  * TopstepX / ProjectX API client.
  *
- * SAFETY: This client is deliberately READ-ONLY. There are no order-placement
- * methods. If/when live execution is added (a later phase), it must live behind
- * an explicit, separately-reviewed module — not here.
+ * Reads are always available. The single write method, `submitOrder`, is
+ * low-level and UNGUARDED — it must ONLY be called by the OrderExecutor, which
+ * enforces the kill switch, approval, live-trading flag, and all safety gates
+ * first. Never call `submitOrder` directly from a route or the CLI.
  *
  * When credentials are missing, every method falls back to deterministic demo
- * data so the rest of the engine (risk manager, journal, dashboard) can run and
- * be developed offline.
+ * data / simulated fills so the whole engine can run offline.
  */
 export class TopstepClient {
   private token: string | null = null;
@@ -92,6 +99,44 @@ export class TopstepClient {
       close: b.c,
       volume: b.v,
     }));
+  }
+
+  /**
+   * Low-level order submission. UNGUARDED — see the class doc. The executor is
+   * responsible for every safety check before this is reached. In offline mode,
+   * or when the caller has not enabled live trading, it returns a simulated fill.
+   */
+  async submitOrder(order: OrderRequest, live: boolean): Promise<OrderResult> {
+    if (this.offline || !live) {
+      return {
+        accepted: true,
+        orderId: `PAPER-${randomUUID().slice(0, 8)}`,
+        paper: true,
+        message: this.offline
+          ? "Simulated fill (offline mode)."
+          : "Simulated fill (live trading disabled).",
+      };
+    }
+    await this.ensureAuth();
+    const res = await this.request("/api/Order/place", {
+      method: "POST",
+      body: JSON.stringify({
+        symbol: order.symbol,
+        side: order.side === "long" ? "Buy" : "Sell",
+        size: order.size,
+        type: "Limit",
+        limitPrice: order.entry,
+        stopLoss: order.stopLoss,
+        takeProfit: order.target,
+      }),
+    });
+    const data = (await res.json()) as { orderId?: string | number };
+    return {
+      accepted: true,
+      orderId: String(data.orderId ?? "unknown"),
+      paper: false,
+      message: "Order submitted to TopstepX.",
+    };
   }
 
   // --- internals ---------------------------------------------------------

@@ -36,7 +36,23 @@ Behavioural guardrails that prevent the common ways traders blow up:
 | `daily-loss-budget` | block | Risk exceeds remaining daily-loss budget |
 | `risk-concentration` | warn | Single trade risks a large share of the budget |
 
-A trade is **approved** only when there are no `block`-severity violations.
+### Execution-time gates (semi-autonomous stack)
+
+These run when the engine supplies a `RiskContext` (the propose/approve flow):
+
+| Rule | Severity | Meaning |
+|------|----------|---------|
+| `kill-switch` | block | Emergency stop is engaged |
+| `news-risk` | block | High-impact news in the trade window (unless overridden) |
+| `engine-max-position-size` | block | Size exceeds `MAX_POSITION_SIZE` |
+| `max-risk-per-trade` | block | Dollar risk exceeds `MAX_RISK_PER_TRADE` |
+| `max-trades-per-day` | block | Daily trade count reached `MAX_TRADES_PER_DAY` |
+| `duplicate-trade` | block | An open position/idea on the same symbol+side exists |
+| `trading-hours` | block | Outside the setup's allowed hours |
+
+A trade is **approved** only when there are no `block`-severity violations. The
+`OrderExecutor` re-checks the kill switch and risk approval again at the moment
+of execution, so a trip between proposal and approval still stops the trade.
 
 ## Dollar risk math
 

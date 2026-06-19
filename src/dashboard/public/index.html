@@ -6,128 +6,184 @@
     <title>Avrrio Trade AI — Dashboard</title>
     <style>
       :root {
-        --bg: #0f1117;
-        --card: #1a1d27;
-        --line: #2a2e3c;
-        --text: #e6e8ee;
-        --muted: #8b90a0;
-        --ok: #3fb950;
-        --warn: #d29922;
-        --block: #f85149;
+        --bg: #0f1117; --card: #1a1d27; --line: #2a2e3c; --text: #e6e8ee;
+        --muted: #8b90a0; --ok: #3fb950; --warn: #d29922; --block: #f85149; --blue: #2563eb;
       }
       * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font: 14px/1.5 -apple-system, system-ui, sans-serif;
-        background: var(--bg);
-        color: var(--text);
-      }
-      header {
-        padding: 16px 24px;
-        border-bottom: 1px solid var(--line);
-        display: flex;
-        align-items: baseline;
-        gap: 12px;
-      }
-      h1 { font-size: 18px; margin: 0; }
+      body { margin: 0; font: 14px/1.5 -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+      header { padding: 14px 24px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+      h1 { font-size: 17px; margin: 0; }
       .tag { color: var(--muted); font-size: 12px; }
-      main { padding: 24px; display: grid; gap: 16px; max-width: 980px; }
-      .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-      .card {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 16px;
-      }
-      .card h2 { font-size: 13px; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; letter-spacing: .04em; }
-      .big { font-size: 26px; font-weight: 600; }
-      .warn-box { border-color: var(--warn); }
+      .spacer { flex: 1; }
+      main { padding: 24px; display: grid; gap: 16px; max-width: 1040px; }
+      .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+      .card h2 { font-size: 12px; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; letter-spacing: .04em; }
+      .big { font-size: 24px; font-weight: 600; }
       .warnings li { color: var(--warn); }
       label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-      input, select, button {
-        background: #0f1117; color: var(--text);
-        border: 1px solid var(--line); border-radius: 6px; padding: 8px;
-        font: inherit; width: 100%;
-      }
-      button { background: #2563eb; border-color: #2563eb; cursor: pointer; font-weight: 600; }
+      input, select, button { background: #0f1117; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: inherit; width: 100%; }
+      button { cursor: pointer; font-weight: 600; }
+      .btn-primary { background: var(--blue); border-color: var(--blue); }
+      .btn-ok { background: var(--ok); border-color: var(--ok); color: #06210e; }
+      .btn-danger { background: var(--block); border-color: var(--block); }
+      .btn-ghost { background: transparent; }
       .row { display: grid; gap: 8px; grid-template-columns: repeat(3, 1fr); }
-      .result .approved { color: var(--ok); font-weight: 700; }
-      .result .blocked { color: var(--block); font-weight: 700; }
-      .v-warn { color: var(--warn); }
-      .v-block { color: var(--block); }
+      .row6 { display: grid; gap: 8px; grid-template-columns: repeat(6, 1fr); }
       table { width: 100%; border-collapse: collapse; font-size: 13px; }
-      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
       th { color: var(--muted); font-weight: 500; }
+      .v-warn { color: var(--warn); } .v-block { color: var(--block); }
+      .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; border: 1px solid var(--line); }
+      .pill.pending { color: var(--warn); border-color: var(--warn); }
+      .pill.executed { color: var(--ok); border-color: var(--ok); }
+      .pill.blocked, .pill.rejected { color: var(--block); border-color: var(--block); }
+      .rec { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+      .rec .actions { display: flex; gap: 8px; }
+      .rec .actions button { width: auto; padding: 6px 14px; }
+      .hidden { display: none; }
+      #login { max-width: 360px; margin: 80px auto; }
+      .kill { display: flex; align-items: center; gap: 10px; }
     </style>
   </head>
   <body>
-    <header>
-      <h1>Avrrio Trade AI</h1>
-      <span class="tag">read-only analyst &amp; risk manager — no live orders</span>
-    </header>
-    <main>
-      <ul class="warnings" id="warnings"></ul>
+    <!-- Login -->
+    <div id="login" class="card">
+      <h2>Avrrio Trade AI — sign in</h2>
+      <label>Dashboard password</label>
+      <input id="password" type="password" placeholder="DASHBOARD_PASSWORD" />
+      <button class="btn-primary" id="loginBtn" style="margin-top:10px">Sign in</button>
+      <div id="loginErr" class="v-block" style="margin-top:8px"></div>
+      <div class="tag" style="margin-top:8px">If no password is configured, leave blank and sign in.</div>
+    </div>
 
-      <div class="grid" id="account"></div>
+    <!-- App -->
+    <div id="app" class="hidden">
+      <header>
+        <h1>Avrrio Trade AI</h1>
+        <span class="tag" id="modeTag"></span>
+        <span class="spacer"></span>
+        <button class="btn-danger" id="killBtn" style="width:auto;padding:8px 16px">🛑 Emergency Stop</button>
+      </header>
+      <main>
+        <ul class="warnings" id="warnings"></ul>
+        <div class="grid" id="account"></div>
 
-      <div class="card">
-        <h2>Evaluate a trade idea</h2>
-        <div class="row">
-          <div><label>Symbol</label><input id="symbol" value="NQ" /></div>
-          <div>
-            <label>Side</label>
-            <select id="side"><option>long</option><option>short</option></select>
+        <div class="card">
+          <h2>Propose a trade (AI consensus + risk check, then YOU approve)</h2>
+          <div class="row6">
+            <div><label>Setup</label><input id="setupName" placeholder="(optional)" /></div>
+            <div><label>Symbol</label><input id="symbol" value="NQ" /></div>
+            <div><label>Side</label><select id="side"><option>long</option><option>short</option></select></div>
+            <div><label>Size</label><input id="size" type="number" value="1" /></div>
+            <div><label>Entry</label><input id="entry" type="number" value="20000" /></div>
+            <div><label>Stop</label><input id="stop" type="number" value="19960" /></div>
           </div>
-          <div><label>Size (contracts)</label><input id="size" type="number" value="1" /></div>
+          <div class="row" style="margin-top:8px">
+            <div><label>Target</label><input id="target" type="number" value="20080" /></div>
+            <div style="grid-column: span 2; display:flex; align-items:end">
+              <button class="btn-primary" id="proposeBtn">Generate recommendation</button>
+            </div>
+          </div>
+          <div id="proposeErr" class="v-block" style="margin-top:8px"></div>
         </div>
-        <div class="row" style="margin-top:8px">
-          <div><label>Entry</label><input id="entry" type="number" value="20000" /></div>
-          <div><label>Stop</label><input id="stop" type="number" value="19960" /></div>
-          <div><label>Target</label><input id="target" type="number" value="20080" /></div>
-        </div>
-        <button id="go" style="margin-top:12px">Assess (no order is placed)</button>
-        <div class="result" id="result" style="margin-top:12px"></div>
-      </div>
 
-      <div class="card">
-        <h2>Trade journal</h2>
-        <table id="journal"><thead><tr>
-          <th>Time</th><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Risk OK</th><th>P&amp;L</th>
-        </tr></thead><tbody></tbody></table>
-      </div>
-    </main>
+        <div class="card">
+          <h2>Pending approvals</h2>
+          <div id="recs"></div>
+        </div>
+
+        <div class="card">
+          <h2>Audit log (latest)</h2>
+          <table id="audit"><thead><tr><th>Time</th><th>Type</th><th>Actor</th><th>Details</th></tr></thead><tbody></tbody></table>
+        </div>
+      </main>
+    </div>
 
     <script>
       const $ = (id) => document.getElementById(id);
+      let TOKEN = null;
+      const authHeaders = () => (TOKEN ? { authorization: "Bearer " + TOKEN } : {});
+      const api = (path, opts = {}) =>
+        fetch(path, {
+          ...opts,
+          headers: { "content-type": "application/json", ...authHeaders(), ...(opts.headers || {}) },
+        });
 
-      async function loadStatus() {
-        const s = await fetch("/api/status").then((r) => r.json());
-        $("warnings").innerHTML = s.warnings.map((w) => `<li>${w}</li>`).join("");
-        const a = s.account;
-        $("account").innerHTML = `
-          <div class="card"><h2>Account</h2><div>${a.name}</div><div class="tag">${s.offline ? "OFFLINE / demo data" : "live"}</div></div>
-          <div class="card"><h2>Balance</h2><div class="big">$${a.balance.toLocaleString()}</div></div>
-          <div class="card"><h2>Day P&amp;L</h2><div class="big" style="color:${a.dayPnl < 0 ? "var(--block)" : "var(--ok)"}">$${a.dayPnl.toLocaleString()}</div></div>
-          <div class="card"><h2>Max daily loss</h2><div class="big">$${a.rules.maxDailyLoss.toLocaleString()}</div></div>
-          <div class="card"><h2>Max position</h2><div class="big">${a.rules.maxPositionSize}</div><div class="tag">Claude: ${s.claudeEnabled ? "on" : "off"}</div></div>
-        `;
-        loadJournal();
+      async function login() {
+        const r = await fetch("/api/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ password: $("password").value }),
+        });
+        if (!r.ok) { $("loginErr").textContent = "Invalid password."; return; }
+        TOKEN = (await r.json()).token;
+        $("login").classList.add("hidden");
+        $("app").classList.remove("hidden");
+        refresh();
       }
 
-      async function loadJournal() {
-        const rows = await fetch("/api/journal").then((r) => r.json());
-        $("journal").querySelector("tbody").innerHTML = rows
-          .map((e) => `<tr>
-            <td>${new Date(e.createdAt).toLocaleTimeString()}</td>
-            <td>${e.symbol}</td><td>${e.side}</td><td>${e.size}</td><td>${e.entry}</td>
-            <td>${e.riskApproved ? "✅" : "🛑"}</td>
-            <td>${e.realizedPnl != null ? "$" + e.realizedPnl.toFixed(0) : "—"}</td>
-          </tr>`)
+      async function refresh() {
+        const s = await api("/api/status").then((r) => r.json());
+        $("warnings").innerHTML = s.warnings.map((w) => `<li>${w}</li>`).join("");
+        const a = s.account;
+        $("modeTag").textContent =
+          `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · ${s.semiAutonomous ? "semi-auto" : "manual"} · AI: ${s.providers.join("+") || "none"}`;
+        $("killBtn").textContent = s.killSwitch.engaged ? "✅ Clear Emergency Stop" : "🛑 Emergency Stop";
+        $("killBtn").dataset.engaged = s.killSwitch.engaged ? "1" : "";
+        $("account").innerHTML = `
+          <div class="card"><h2>Account</h2><div>${a.name}</div></div>
+          <div class="card"><h2>Balance</h2><div class="big">$${a.balance.toLocaleString()}</div></div>
+          <div class="card"><h2>Day P&amp;L</h2><div class="big" style="color:${a.dayPnl < 0 ? "var(--block)" : "var(--ok)"}">$${a.dayPnl.toLocaleString()}</div></div>
+          <div class="card"><h2>Max daily loss</h2><div class="big">$${(s.safety.dailyMaxLoss || a.rules.maxDailyLoss).toLocaleString()}</div></div>
+          <div class="card"><h2>Max position</h2><div class="big">${s.safety.maxPositionSize || a.rules.maxPositionSize}</div></div>`;
+        loadRecs(); loadAudit();
+      }
+
+      async function loadRecs() {
+        const recs = await api("/api/recommendations").then((r) => r.json());
+        $("recs").innerHTML =
+          recs.slice().reverse().map((r) => {
+            const viol = r.violations.map((v) => `<li class="v-${v.severity}">[${v.severity}] ${v.message}</li>`).join("");
+            const ops = r.consensus.opinions.map((o) => `${o.provider}: ${o.recommendation}${o.available ? " ("+(o.confidence*100).toFixed(0)+"%)" : " —"}`).join(" · ");
+            const canAct = r.status === "pending";
+            return `<div class="rec">
+              <div><b>${r.symbol} ${r.side.toUpperCase()} ×${r.size}</b> <span class="pill ${r.status}">${r.status}</span> ${r.setupName ? '<span class="tag">'+r.setupName+'</span>' : ''}</div>
+              <div class="tag">Entry ${r.entry} · Stop ${r.stopLoss} · Target ${r.target} · Risk $${r.riskAmount.toFixed(0)} · R:R ${r.rewardRiskRatio.toFixed(2)}</div>
+              <div class="tag">Consensus: <b>${r.consensus.recommendation}</b> (${r.consensus.agreement}/${r.consensus.available} agree, ${(r.consensus.confidence*100).toFixed(0)}%) · ${ops}</div>
+              <div class="tag">News: ${r.news.blocked ? '<span class="v-block">'+r.news.reason+'</span>' : 'clear'} · Auto-eligible: ${r.autoEligible ? "yes" : "no"}</div>
+              ${viol ? '<ul>'+viol+'</ul>' : ''}
+              ${r.orderResult ? '<div class="tag">Order: '+r.orderResult.orderId+(r.orderResult.paper?" (paper)":" (LIVE)")+'</div>' : ''}
+              ${canAct ? `<div class="actions">
+                  <button class="btn-ok" onclick="approve('${r.id}')">Approve Trade</button>
+                  <button class="btn-danger" onclick="reject('${r.id}')">Reject</button>
+                </div>` : ''}
+            </div>`;
+          }).join("") || '<div class="tag">No recommendations yet.</div>';
+      }
+
+      async function loadAudit() {
+        const rows = await api("/api/audit").then((r) => r.json());
+        $("audit").querySelector("tbody").innerHTML = rows
+          .map((e) => `<tr><td>${new Date(e.timestamp).toLocaleTimeString()}</td><td>${e.type}</td><td>${e.actor}</td><td class="tag">${JSON.stringify(e.details)}</td></tr>`)
           .join("");
       }
 
-      $("go").addEventListener("click", async () => {
+      window.approve = async (id) => {
+        if (!confirm("Approve and place this trade?")) return;
+        const r = await api(`/api/recommendations/${id}/approve`, { method: "POST" }).then((x) => x.json());
+        if (r.error) alert("Error: " + r.error);
+        refresh();
+      };
+      window.reject = async (id) => {
+        await api(`/api/recommendations/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: "operator rejected" }) });
+        refresh();
+      };
+
+      $("proposeBtn").addEventListener("click", async () => {
+        $("proposeErr").textContent = "";
         const idea = {
+          setupName: $("setupName").value || undefined,
           symbol: $("symbol").value,
           side: $("side").value,
           size: Number($("size").value),
@@ -135,26 +191,24 @@
           stopLoss: Number($("stop").value),
           target: Number($("target").value),
         };
-        const r = await fetch("/api/evaluate", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(idea),
-        }).then((x) => x.json());
-        if (r.error) { $("result").textContent = "Error: " + r.error; return; }
-        const a = r.assessment;
-        $("result").innerHTML = `
-          <div class="${a.approved ? "approved" : "blocked"}">${a.approved ? "✅ APPROVED" : "🛑 BLOCKED"}</div>
-          <div>Risk: $${a.riskAmount.toFixed(0)} · Reward/Risk: ${a.rewardRiskRatio.toFixed(2)}</div>
-          <ul>${a.violations.map((v) => `<li class="v-${v.severity}">[${v.severity}] ${v.message}</li>`).join("")}</ul>
-          <div class="card" style="margin-top:8px">
-            <h2>Claude</h2>
-            <div>Recommendation: <b>${r.analysis.recommendation}</b> (${(r.analysis.confidence * 100).toFixed(0)}%)</div>
-            <div class="tag">${r.analysis.summary}</div>
-          </div>`;
-        loadJournal();
+        const r = await api("/api/propose", { method: "POST", body: JSON.stringify(idea) }).then((x) => x.json());
+        if (r.error) { $("proposeErr").textContent = r.error; return; }
+        refresh();
       });
 
-      loadStatus();
+      $("killBtn").addEventListener("click", async () => {
+        const engaged = $("killBtn").dataset.engaged === "1";
+        if (engaged) {
+          await api("/api/kill-switch", { method: "POST", body: JSON.stringify({ engage: false }) });
+        } else {
+          if (!confirm("Engage Emergency Stop? All trading will be blocked.")) return;
+          await api("/api/kill-switch", { method: "POST", body: JSON.stringify({ engage: true, reason: "operator emergency stop" }) });
+        }
+        refresh();
+      });
+
+      $("loginBtn").addEventListener("click", login);
+      $("password").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
     </script>
   </body>
 </html>

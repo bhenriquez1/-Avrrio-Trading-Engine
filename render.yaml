@@ -1,0 +1,40 @@
+# Render deployment blueprint for the Avrrio Trading Engine dashboard.
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: avrrio-trading-engine
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      # Safety flags default SAFE. Set explicitly to enable real trading.
+      - key: LIVE_TRADING_ENABLED
+        value: "false"
+      - key: SEMI_AUTONOMOUS_ENABLED
+        value: "false"
+      - key: KILL_SWITCH
+        value: "false"
+      # Secrets — set in the Render dashboard, do not commit.
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TOPSTEP_USERNAME
+        sync: false
+      - key: TOPSTEP_API_KEY
+        sync: false
+      # Risk limits — tune to your account.
+      - key: DAILY_MAX_LOSS
+        value: "1000"
+      - key: MAX_POSITION_SIZE
+        value: "2"
+      - key: MAX_TRADES_PER_DAY
+        value: "2"
+      - key: MAX_RISK_PER_TRADE
+        value: "300"
+      - key: AVRRIO_CONFIDENCE_THRESHOLD
+        value: "0.9"

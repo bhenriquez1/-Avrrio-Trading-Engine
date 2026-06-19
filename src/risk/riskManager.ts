@@ -13,18 +13,63 @@ import {
 } from "./rules.js";
 
 /**
- * The risk manager — the heart of the project.
- *
- * It does not predict the market. It answers one question: "Does this trade
- * idea respect the account rules and the operator's own discipline policy?"
- * A blocked idea should never be acted on.
+ * Optional execution-time context. When provided, the risk manager runs the full
+ * semi-autonomous safety stack (kill switch, daily-loss budget, trade count,
+ * duplicates, news). When omitted, only the structural + account-rule checks run
+ * (used by the Phase 1 idea evaluator and unit tests).
+ */
+export interface RiskContext {
+  killSwitchEngaged?: boolean;
+  /** Result of the news reader for this symbol/window. */
+  news?: { blocked: boolean; reason: string };
+  /** Operator override permitting a trade despite a news block. */
+  newsOverride?: boolean;
+  /** Trades already taken today (for the per-day cap). */
+  tradesToday?: number;
+  /** True if there is already an open position/idea on this symbol+side. */
+  duplicateOpen?: boolean;
+  /** True if the prospective trade is inside its setup's allowed hours. */
+  withinAllowedHours?: boolean;
+  /** Engine-level absolute safety limits (from config). */
+  safety?: {
+    maxPositionSize: number;
+    maxTradesPerDay: number;
+    maxRiskPerTrade: number;
+  };
+}
+
+/**
+ * The risk manager — the heart of the project. It never predicts the market; it
+ * answers one question: "Does this trade respect every account rule, engine
+ * limit, and safety gate?" A blocked idea must never be acted on.
  */
 export class RiskManager {
   constructor(private readonly policy: EngineRiskPolicy = DEFAULT_POLICY) {}
 
-  assess(idea: TradeIdea, account: AccountSummary): RiskAssessment {
+  assess(
+    idea: TradeIdea,
+    account: AccountSummary,
+    context: RiskContext = {},
+  ): RiskAssessment {
     const violations: RuleViolation[] = [];
     const pv = pointValue(idea.symbol);
+
+    // --- highest-priority hard gates ----------------------------------
+    if (context.killSwitchEngaged) {
+      violations.push({
+        rule: "kill-switch",
+        message: "Kill switch is engaged — all trading is blocked.",
+        severity: "block",
+      });
+    }
+
+    if (context.news?.blocked && !context.newsOverride) {
+      violations.push({
+        rule: "news-risk",
+        message: context.news.reason,
+        severity: "block",
+      });
+    }
 
     // --- structural validity ------------------------------------------
     if (idea.size <= 0) {
@@ -85,7 +130,6 @@ export class RiskManager {
     }
 
     if (rules.maxDailyLoss > 0) {
-      // Remaining loss budget before the account locks for the day.
       const lossUsed = Math.max(0, -account.dayPnl);
       const remaining = rules.maxDailyLoss - lossUsed;
       if (riskAmount > remaining) {
@@ -104,6 +148,51 @@ export class RiskManager {
           severity: "warn",
         });
       }
+    }
+
+    // --- engine-level safety limits (semi-autonomous stack) -----------
+    const safety = context.safety;
+    if (safety) {
+      if (safety.maxPositionSize > 0 && idea.size > safety.maxPositionSize) {
+        violations.push({
+          rule: "engine-max-position-size",
+          message: `Size ${idea.size} exceeds engine MAX_POSITION_SIZE of ${safety.maxPositionSize}.`,
+          severity: "block",
+        });
+      }
+      if (safety.maxRiskPerTrade > 0 && riskAmount > safety.maxRiskPerTrade) {
+        violations.push({
+          rule: "max-risk-per-trade",
+          message: `Trade risks $${riskAmount.toFixed(0)}, above MAX_RISK_PER_TRADE of $${safety.maxRiskPerTrade}.`,
+          severity: "block",
+        });
+      }
+      if (
+        safety.maxTradesPerDay > 0 &&
+        (context.tradesToday ?? 0) >= safety.maxTradesPerDay
+      ) {
+        violations.push({
+          rule: "max-trades-per-day",
+          message: `Already took ${context.tradesToday} trades today; limit is ${safety.maxTradesPerDay}.`,
+          severity: "block",
+        });
+      }
+    }
+
+    if (context.duplicateOpen) {
+      violations.push({
+        rule: "duplicate-trade",
+        message: `An open ${idea.side} position/idea on ${idea.symbol} already exists.`,
+        severity: "block",
+      });
+    }
+
+    if (context.withinAllowedHours === false) {
+      violations.push({
+        rule: "trading-hours",
+        message: "Outside the setup's allowed trading hours.",
+        severity: "block",
+      });
     }
 
     const approved = !violations.some((v) => v.severity === "block");

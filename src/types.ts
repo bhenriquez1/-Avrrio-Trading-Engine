@@ -88,6 +88,24 @@ export interface RiskAssessment {
   violations: RuleViolation[];
 }
 
+export interface OrderRequest {
+  symbol: string;
+  side: Side;
+  size: number;
+  entry: number;
+  stopLoss: number;
+  target: number;
+}
+
+export interface OrderResult {
+  accepted: boolean;
+  /** Broker order id, or a simulated id in paper mode. */
+  orderId: string;
+  /** True when this was a paper (non-live) fill. */
+  paper: boolean;
+  message: string;
+}
+
 export interface ClaudeAnalysis {
   recommendation: Side | "no-trade";
   confidence: number; // 0..1
