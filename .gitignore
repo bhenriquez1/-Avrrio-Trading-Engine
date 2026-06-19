@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment / secrets — NEVER commit real keys
+.env
+.env.local
+*.local
+
+# Trade journal data (local, may contain account specifics)
+data/*.json
+data/*.jsonl
+!data/.gitkeep
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Avrrio Trade AI — Dashboard</title>
+    <style>
+      :root {
+        --bg: #0f1117;
+        --card: #1a1d27;
+        --line: #2a2e3c;
+        --text: #e6e8ee;
+        --muted: #8b90a0;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --block: #f85149;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.5 -apple-system, system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header {
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+      }
+      h1 { font-size: 18px; margin: 0; }
+      .tag { color: var(--muted); font-size: 12px; }
+      main { padding: 24px; display: grid; gap: 16px; max-width: 980px; }
+      .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 16px;
+      }
+      .card h2 { font-size: 13px; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; letter-spacing: .04em; }
+      .big { font-size: 26px; font-weight: 600; }
+      .warn-box { border-color: var(--warn); }
+      .warnings li { color: var(--warn); }
+      label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+      input, select, button {
+        background: #0f1117; color: var(--text);
+        border: 1px solid var(--line); border-radius: 6px; padding: 8px;
+        font: inherit; width: 100%;
+      }
+      button { background: #2563eb; border-color: #2563eb; cursor: pointer; font-weight: 600; }
+      .row { display: grid; gap: 8px; grid-template-columns: repeat(3, 1fr); }
+      .result .approved { color: var(--ok); font-weight: 700; }
+      .result .blocked { color: var(--block); font-weight: 700; }
+      .v-warn { color: var(--warn); }
+      .v-block { color: var(--block); }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+      th { color: var(--muted); font-weight: 500; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Avrrio Trade AI</h1>
+      <span class="tag">read-only analyst &amp; risk manager — no live orders</span>
+    </header>
+    <main>
+      <ul class="warnings" id="warnings"></ul>
+
+      <div class="grid" id="account"></div>
+
+      <div class="card">
+        <h2>Evaluate a trade idea</h2>
+        <div class="row">
+          <div><label>Symbol</label><input id="symbol" value="NQ" /></div>
+          <div>
+            <label>Side</label>
+            <select id="side"><option>long</option><option>short</option></select>
+          </div>
+          <div><label>Size (contracts)</label><input id="size" type="number" value="1" /></div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <div><label>Entry</label><input id="entry" type="number" value="20000" /></div>
+          <div><label>Stop</label><input id="stop" type="number" value="19960" /></div>
+          <div><label>Target</label><input id="target" type="number" value="20080" /></div>
+        </div>
+        <button id="go" style="margin-top:12px">Assess (no order is placed)</button>
+        <div class="result" id="result" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
+        <h2>Trade journal</h2>
+        <table id="journal"><thead><tr>
+          <th>Time</th><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Risk OK</th><th>P&amp;L</th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      async function loadStatus() {
+        const s = await fetch("/api/status").then((r) => r.json());
+        $("warnings").innerHTML = s.warnings.map((w) => `<li>${w}</li>`).join("");
+        const a = s.account;
+        $("account").innerHTML = `
+          <div class="card"><h2>Account</h2><div>${a.name}</div><div class="tag">${s.offline ? "OFFLINE / demo data" : "live"}</div></div>
+          <div class="card"><h2>Balance</h2><div class="big">$${a.balance.toLocaleString()}</div></div>
+          <div class="card"><h2>Day P&amp;L</h2><div class="big" style="color:${a.dayPnl < 0 ? "var(--block)" : "var(--ok)"}">$${a.dayPnl.toLocaleString()}</div></div>
+          <div class="card"><h2>Max daily loss</h2><div class="big">$${a.rules.maxDailyLoss.toLocaleString()}</div></div>
+          <div class="card"><h2>Max position</h2><div class="big">${a.rules.maxPositionSize}</div><div class="tag">Claude: ${s.claudeEnabled ? "on" : "off"}</div></div>
+        `;
+        loadJournal();
+      }
+
+      async function loadJournal() {
+        const rows = await fetch("/api/journal").then((r) => r.json());
+        $("journal").querySelector("tbody").innerHTML = rows
+          .map((e) => `<tr>
+            <td>${new Date(e.createdAt).toLocaleTimeString()}</td>
+            <td>${e.symbol}</td><td>${e.side}</td><td>${e.size}</td><td>${e.entry}</td>
+            <td>${e.riskApproved ? "✅" : "🛑"}</td>
+            <td>${e.realizedPnl != null ? "$" + e.realizedPnl.toFixed(0) : "—"}</td>
+          </tr>`)
+          .join("");
+      }
+
+      $("go").addEventListener("click", async () => {
+        const idea = {
+          symbol: $("symbol").value,
+          side: $("side").value,
+          size: Number($("size").value),
+          entry: Number($("entry").value),
+          stopLoss: Number($("stop").value),
+          target: Number($("target").value),
+        };
+        const r = await fetch("/api/evaluate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(idea),
+        }).then((x) => x.json());
+        if (r.error) { $("result").textContent = "Error: " + r.error; return; }
+        const a = r.assessment;
+        $("result").innerHTML = `
+          <div class="${a.approved ? "approved" : "blocked"}">${a.approved ? "✅ APPROVED" : "🛑 BLOCKED"}</div>
+          <div>Risk: $${a.riskAmount.toFixed(0)} · Reward/Risk: ${a.rewardRiskRatio.toFixed(2)}</div>
+          <ul>${a.violations.map((v) => `<li class="v-${v.severity}">[${v.severity}] ${v.message}</li>`).join("")}</ul>
+          <div class="card" style="margin-top:8px">
+            <h2>Claude</h2>
+            <div>Recommendation: <b>${r.analysis.recommendation}</b> (${(r.analysis.confidence * 100).toFixed(0)}%)</div>
+            <div class="tag">${r.analysis.summary}</div>
+          </div>`;
+        loadJournal();
+      });
+
+      loadStatus();
+    </script>
+  </body>
+</html>
