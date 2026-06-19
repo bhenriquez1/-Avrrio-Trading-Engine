@@ -47,6 +47,35 @@ export interface AvrrioConfig {
     /** Password required to log in to the dashboard / approve trades. */
     password: string;
   };
+  /** Public base URL used to build approve/reject links in notifications. */
+  publicBaseUrl: string;
+  queue: {
+    /** Minutes a recommendation stays valid for approval before it expires. */
+    approvalExpiryMinutes: number;
+    /** How close (fraction of price) the last price must get to entry to trigger. */
+    entryTriggerTolerancePct: number;
+  };
+  notifications: {
+    enabled: boolean;
+    email: {
+      enabled: boolean;
+      to: string;
+      from: string;
+      sendgridApiKey: string;
+    };
+    telegram: {
+      enabled: boolean;
+      botToken: string;
+      chatId: string;
+    };
+    sms: {
+      enabled: boolean;
+      twilioAccountSid: string;
+      twilioAuthToken: string;
+      fromNumber: string;
+      toNumber: string;
+    };
+  };
 }
 
 function env(name: string, fallback = ""): string {
@@ -99,6 +128,32 @@ export function loadConfig(): AvrrioConfig {
       port: num("PORT", num("DASHBOARD_PORT", 4317)),
       password: env("DASHBOARD_PASSWORD"),
     },
+    publicBaseUrl: env("PUBLIC_BASE_URL", "http://localhost:4317"),
+    queue: {
+      approvalExpiryMinutes: num("NOTIFICATION_EXPIRY_MINUTES", 5),
+      entryTriggerTolerancePct: num("EXEC_TRIGGER_TOLERANCE_PCT", 0.001),
+    },
+    notifications: {
+      enabled: bool("PHONE_NOTIFICATIONS_ENABLED", false),
+      email: {
+        enabled: bool("EMAIL_NOTIFICATIONS_ENABLED", true),
+        to: env("NOTIFICATION_EMAIL_TO"),
+        from: env("NOTIFICATION_EMAIL_FROM", "alerts@avrrio.local"),
+        sendgridApiKey: env("SENDGRID_API_KEY"),
+      },
+      telegram: {
+        enabled: bool("TELEGRAM_ENABLED", false),
+        botToken: env("TELEGRAM_BOT_TOKEN"),
+        chatId: env("TELEGRAM_CHAT_ID"),
+      },
+      sms: {
+        enabled: bool("SMS_ENABLED", false),
+        twilioAccountSid: env("TWILIO_ACCOUNT_SID"),
+        twilioAuthToken: env("TWILIO_AUTH_TOKEN"),
+        fromNumber: env("TWILIO_FROM_NUMBER"),
+        toNumber: env("BRIAN_PHONE_NUMBER"),
+      },
+    },
   };
 }
 
@@ -140,6 +195,14 @@ export function configWarnings(config: AvrrioConfig): string[] {
   }
   if (config.safety.killSwitch) {
     warnings.push("KILL_SWITCH is engaged via env — ALL trading is blocked.");
+  }
+  if (
+    config.notifications.enabled &&
+    config.publicBaseUrl.includes("localhost")
+  ) {
+    warnings.push(
+      "PHONE_NOTIFICATIONS_ENABLED is true but PUBLIC_BASE_URL is localhost — approve/reject links won't work from a phone. Set PUBLIC_BASE_URL to your deployed URL.",
+    );
   }
   return warnings;
 }

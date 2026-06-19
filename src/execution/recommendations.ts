@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { ProviderOpinion } from "../ai/consensus.js";
@@ -6,11 +6,15 @@ import type { OrderResult, RuleViolation, Side } from "../types.js";
 
 export type RecommendationStatus =
   | "pending" // awaiting operator approval
+  | "armed" // pre-approved; waiting for the entry/conditions to trigger
   | "approved" // approved, order in flight / executed
   | "rejected" // operator declined
   | "executed" // order accepted by broker (or paper)
   | "blocked" // risk manager / safety blocked it
   | "expired";
+
+/** How an approved trade should execute. */
+export type ApprovalMode = "immediate" | "pre-approved";
 
 /**
  * A trade the engine is proposing. It carries every input to the approval
@@ -44,6 +48,12 @@ export interface Recommendation {
   /** True if every semi-autonomous auto-execution gate passed. */
   autoEligible: boolean;
   status: RecommendationStatus;
+  /** Unguessable token allowing approve/reject from a notification link. */
+  approvalToken: string;
+  /** When the recommendation/approval is no longer valid (ISO), or null. */
+  expiresAt: string | null;
+  /** Set when approved: immediate execution vs pre-approved (wait for entry). */
+  approvalMode: ApprovalMode | null;
   decidedBy?: string;
   decidedAt?: string;
   orderResult?: OrderResult;
@@ -51,7 +61,7 @@ export interface Recommendation {
 
 export type NewRecommendation = Omit<
   Recommendation,
-  "id" | "createdAt" | "status"
+  "id" | "createdAt" | "status" | "approvalToken"
 >;
 
 export class RecommendationStore {
@@ -86,10 +96,16 @@ export class RecommendationStore {
       id: randomUUID(),
       createdAt: new Date().toISOString(),
       status: rec.riskApproved ? "pending" : "blocked",
+      approvalToken: randomBytes(18).toString("hex"),
     };
     this.items.push(full);
     await this.persist();
     return full;
+  }
+
+  /** Pre-approved trades waiting for their entry/conditions to trigger. */
+  armed(): Recommendation[] {
+    return this.items.filter((r) => r.status === "armed");
   }
 
   async update(rec: Recommendation): Promise<void> {

@@ -49,6 +49,41 @@ See [docs/strategy-notes.md](docs/strategy-notes.md) for the staged rollout.
 9. **Audit log** — every decision recorded.
 10. **Default safe mode** — live + semi-autonomous off unless explicitly enabled.
 
+## Execution modes & the pre-approved queue
+
+Designed for someone who can't watch the screen 9–5:
+
+- **Mode 1 — Manual:** AI recommends → you **Approve now** → executes immediately.
+- **Mode 2 — Pre-approved (best for a day job):** AI recommends → you **Pre-approve**
+  (from the dashboard or a phone link) → the trade is **armed** and waits. A
+  maintenance loop executes it only when **the entry is reached AND** risk limits
+  pass, no high-impact news, and the kill switch is clear — before it expires.
+- **Mode 3 — Semi-autonomous:** auto-executes when every gate passes
+  (`SEMI_AUTONOMOUS_ENABLED=true`).
+
+Every recommendation has an **expiration** (`NOTIFICATION_EXPIRY_MINUTES`, default
+5): if not approved in time it auto-cancels, preventing stale trades.
+
+## Phone / alert notifications
+
+When a setup is found, Avrrio can alert you so you can approve, reject, or let it
+expire from your phone (`src/notifications/`):
+
+- **Telegram** (recommended first — fast, free): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+- **Email** (on by default; sends when configured): SendGrid `SENDGRID_API_KEY`, `NOTIFICATION_EMAIL_TO`.
+- **SMS** (add later): Twilio `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` / `BRIAN_PHONE_NUMBER`.
+
+Alerts include symbol, direction, entry, stop, target, risk, confidence, news
+status, expiration, and **tokenized approve/reject links** that work without a
+dashboard login:
+
+- `GET /api/approve-trade?id=…&token=…` (pre-approved by default)
+- `GET /api/reject-trade?id=…&token=…`
+
+Set `PUBLIC_BASE_URL` to your deployed URL so the links resolve from a phone.
+Master switch `PHONE_NOTIFICATIONS_ENABLED=false` by default. Every notification
+and decision is written to the audit log.
+
 ## Symbols & the opportunity scanner
 
 - **Symbol registry** (`src/symbols/registry.ts`) with asset classes:

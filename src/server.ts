@@ -49,6 +49,11 @@ async function start() {
       killSwitch: engine.killSwitch.status(),
       providers: engine.consensus.availableProviders(),
       newsEnabled: engine.news.enabled,
+      notifications: {
+        enabled: engine.notifications.enabled,
+        channels: engine.notifications.activeChannels(),
+      },
+      approvalExpiryMinutes: engine.config.queue.approvalExpiryMinutes,
       warnings: engine.warnings(),
       journalStats: engine.journal.stats(),
       safety: engine.config.safety,
@@ -94,7 +99,12 @@ async function start() {
 
   app.post("/api/recommendations/:id/approve", guard, async (req, res) => {
     try {
-      const result = await engine.approve(req.params.id ?? "", "operator");
+      const { mode } = req.body as { mode?: "immediate" | "pre-approved" };
+      const result = await engine.approve(
+        req.params.id ?? "",
+        "operator",
+        mode ?? "immediate",
+      );
       res.json(result);
     } catch (err) {
       res
@@ -126,6 +136,57 @@ async function start() {
       res.json({ ...engine.killSwitch.status(), disengaged: ok });
     }
   });
+
+  // --- tokenized approve/reject links (from phone notifications) -------
+  // Not behind the password guard — authenticated by the per-recommendation
+  // approval token in the link. Approving via link uses pre-approved mode so the
+  // trade waits for its entry and conditions rather than firing blind.
+  const page = (title: string, body: string) =>
+    `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font:16px system-ui;max-width:480px;margin:60px auto;padding:0 20px"><h2>${title}</h2><p>${body}</p></body>`;
+
+  app.get("/api/approve-trade", async (req, res) => {
+    try {
+      const id = String(req.query.id ?? "");
+      const token = String(req.query.token ?? "");
+      const mode =
+        req.query.mode === "immediate" ? "immediate" : "pre-approved";
+      const result = await engine.approveByToken(id, token, mode);
+      res
+        .status(200)
+        .send(
+          page(
+            "✅ Approved",
+            result.armed
+              ? "Trade pre-approved. It will execute when the entry is reached and all risk/news checks still pass, before it expires."
+              : `Trade approved and submitted (${result.result?.paper ? "paper" : "LIVE"}).`,
+          ),
+        );
+    } catch (err) {
+      res
+        .status(400)
+        .send(page("⚠️ Could not approve", err instanceof Error ? err.message : "error"));
+    }
+  });
+
+  app.get("/api/reject-trade", async (req, res) => {
+    try {
+      await engine.rejectByToken(
+        String(req.query.id ?? ""),
+        String(req.query.token ?? ""),
+      );
+      res.status(200).send(page("🛑 Rejected", "The setup was rejected."));
+    } catch (err) {
+      res
+        .status(400)
+        .send(page("⚠️ Could not reject", err instanceof Error ? err.message : "error"));
+    }
+  });
+
+  // --- pre-approved queue maintenance loop -----------------------------
+  // Expires stale recommendations and triggers armed (pre-approved) trades.
+  const tick = () =>
+    engine.maintain().catch((e) => console.error("maintain error:", e));
+  setInterval(tick, 20_000);
 
   const port = engine.config.dashboard.port;
   app.listen(port, () => {
