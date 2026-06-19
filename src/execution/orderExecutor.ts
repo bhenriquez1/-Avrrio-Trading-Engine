@@ -1,6 +1,7 @@
 import type { AuditLog } from "../audit/auditLog.js";
 import type { AvrrioConfig } from "../config.js";
 import type { KillSwitch } from "../safety/killSwitch.js";
+import { isTradable } from "../symbols/registry.js";
 import type { TopstepClient } from "../topstep/client.js";
 import type { OrderResult } from "../types.js";
 import type { Recommendation, RecommendationStore } from "./recommendations.js";
@@ -27,6 +28,10 @@ export class OrderExecutor {
    */
   async execute(rec: Recommendation, actor: string): Promise<OrderResult> {
     // Final, authoritative gates — re-evaluated at execution time.
+    if (!isTradable(rec.symbol)) {
+      await this.block(rec, actor, "symbol not tradable (watchlist only)");
+      throw new Error(`Blocked: ${rec.symbol} is watchlist-only, not tradable.`);
+    }
     if (this.killSwitch.isEngaged()) {
       await this.block(rec, actor, "kill switch engaged");
       throw new Error("Blocked: kill switch is engaged.");

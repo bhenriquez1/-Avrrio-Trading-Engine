@@ -2,6 +2,7 @@ import express from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { AvrrioEngine, type ProposeInput } from "./engine.js";
+import { SYMBOLS, type AssetClass } from "./symbols/registry.js";
 
 /**
  * Dashboard server.
@@ -64,6 +65,19 @@ async function start() {
 
   app.get("/api/snapshot/:symbol", guard, async (req, res) => {
     res.json(await engine.snapshot(req.params.symbol ?? ""));
+  });
+
+  app.get("/api/symbols", guard, (_req, res) => {
+    res.json(SYMBOLS);
+  });
+
+  app.get("/api/scan", guard, async (req, res) => {
+    const classesParam = String(req.query.classes ?? "");
+    const classes = classesParam
+      ? (classesParam.split(",").filter(Boolean) as AssetClass[])
+      : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    res.json(await engine.scan({ classes, limit }));
   });
 
   // --- workflow (protected) --------------------------------------------

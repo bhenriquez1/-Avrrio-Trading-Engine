@@ -10,6 +10,14 @@ export const POINT_VALUES: Record<string, number> = {
   MES: 5, // Micro E-mini S&P 500
   NQ: 20, // E-mini Nasdaq 100
   MNQ: 2, // Micro E-mini Nasdaq 100
+  YM: 5, // E-mini Dow
+  MYM: 0.5, // Micro E-mini Dow
+  RTY: 50, // E-mini Russell 2000
+  M2K: 5, // Micro E-mini Russell 2000
+  CL: 1000, // Crude Oil ($ per $1.00 move)
+  MCL: 100, // Micro Crude Oil
+  GC: 100, // Gold ($ per $1.00 move)
+  MGC: 10, // Micro Gold
 };
 
 /** Best-effort lookup; defaults to 1 so unknown symbols still compute a number. */

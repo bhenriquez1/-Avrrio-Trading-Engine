@@ -12,8 +12,10 @@ import { MarketDataReader, type MarketSnapshot } from "./market/marketData.js";
 import { NewsReader } from "./news/newsReader.js";
 import { RiskManager, type RiskContext } from "./risk/riskManager.js";
 import { pointValue } from "./risk/rules.js";
+import { Scanner, type ScanOptions, type ScanResult } from "./scanner/scanner.js";
 import { KillSwitch } from "./safety/killSwitch.js";
 import { findSetup, withinAllowedHours } from "./setups/index.js";
+import { isTradable } from "./symbols/registry.js";
 import { TradeJournal } from "./journal/tradeJournal.js";
 import { TopstepClient } from "./topstep/client.js";
 import type { AccountSummary, Side, TradeIdea } from "./types.js";
@@ -39,6 +41,7 @@ export class AvrrioEngine {
   readonly claude: ClaudeAnalysisService;
   readonly consensus: ConsensusEngine;
   readonly news: NewsReader;
+  readonly scanner: Scanner;
   readonly audit: AuditLog;
   readonly killSwitch: KillSwitch;
   readonly recommendations: RecommendationStore;
@@ -55,6 +58,7 @@ export class AvrrioEngine {
     this.claude = new ClaudeAnalysisService(config);
     this.consensus = new ConsensusEngine(config);
     this.news = new NewsReader(config);
+    this.scanner = new Scanner(this.market, this.news);
     this.killSwitch = new KillSwitch(config, this.audit);
     this.recommendations = new RecommendationStore();
     this.executor = new OrderExecutor(
@@ -87,6 +91,11 @@ export class AvrrioEngine {
     return this.market.snapshot(symbol);
   }
 
+  /** Scan and rank the symbol universe by Avrrio Score. */
+  scan(options?: ScanOptions): Promise<ScanResult[]> {
+    return this.scanner.scan(options);
+  }
+
   /**
    * Generate a recommendation: AI consensus + news + full risk stack. Stores it
    * as pending (or blocked). In semi-autonomous mode, auto-executes only when
@@ -103,6 +112,7 @@ export class AvrrioEngine {
     ]);
 
     const context: RiskContext = {
+      symbolTradable: isTradable(input.symbol),
       killSwitchEngaged: this.killSwitch.isEngaged(),
       news,
       newsOverride: input.newsOverride ?? false,
