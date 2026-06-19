@@ -91,6 +91,15 @@ export class Scanner {
   }
 }
 
+/** Score a single snapshot (reuses already-fetched market data). */
+export function scoreSnapshot(
+  snapshot: MarketSnapshot,
+  newsBlocked: boolean,
+): { score: number; components: ScoreComponents } {
+  const components = computeComponents(snapshot, newsBlocked);
+  return { score: avrrioScore(components), components };
+}
+
 export function avrrioScore(c: ScoreComponents): number {
   const raw =
     c.trend * SCORE_WEIGHTS.trend +

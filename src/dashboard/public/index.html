@@ -128,6 +128,20 @@
           headers: { "content-type": "application/json", ...authHeaders(), ...(opts.headers || {}) },
         });
 
+      // Safe JSON parse: never blows up on an HTML error page (502/500/timeout).
+      async function j(res) {
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok || !ct.includes("application/json")) {
+          const txt = await res.text().catch(() => "");
+          throw new Error(`HTTP ${res.status} ${txt.slice(0, 80)}`.trim());
+        }
+        return res.json();
+      }
+      function showError(msg) {
+        $("warnings").innerHTML =
+          `<li class="v-block">⚠️ ${msg}</li>` + $("warnings").innerHTML;
+      }
+
       async function login() {
         const r = await fetch("/api/login", {
           method: "POST",
@@ -144,24 +158,54 @@
       }
 
       async function refresh() {
-        const s = await api("/api/status").then((r) => r.json());
-        $("warnings").innerHTML = s.warnings.map((w) => `<li>${w}</li>`).join("");
+        let s;
+        try {
+          s = await api("/api/status").then(j);
+        } catch (e) {
+          showError("Could not reach the backend: " + e.message);
+          return;
+        }
+        $("warnings").innerHTML = (s.warnings || []).map((w) => `<li>${w}</li>`).join("");
+        if (s.accountError) showError("Account data unavailable: " + s.accountError);
         const a = s.account;
+        const t = s.topstepx || {};
         $("modeTag").textContent =
-          `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · ${s.semiAutonomous ? "semi-auto" : "manual"} · AI: ${s.providers.join("+") || "none"} · alerts: ${s.notifications && s.notifications.enabled ? s.notifications.channels.join("+") : "off"}`;
+          `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · ${s.semiAutonomous ? "semi-auto" : "manual"} · AI: ${s.providers.join("+") || "none"} · alerts: ${s.notifications && s.notifications.smsEnabled ? "SMS" : (s.notifications && s.notifications.enabled ? s.notifications.channels.join("+") : "off")}`;
         $("killBtn").textContent = s.killSwitch.engaged ? "✅ Clear Emergency Stop" : "🛑 Emergency Stop";
         $("killBtn").dataset.engaged = s.killSwitch.engaged ? "1" : "";
         $("account").innerHTML = `
-          <div class="card"><h2>Account</h2><div>${a.name}</div></div>
-          <div class="card"><h2>Balance</h2><div class="big">$${a.balance.toLocaleString()}</div></div>
-          <div class="card"><h2>Day P&amp;L</h2><div class="big" style="color:${a.dayPnl < 0 ? "var(--block)" : "var(--ok)"}">$${a.dayPnl.toLocaleString()}</div></div>
-          <div class="card"><h2>Max daily loss</h2><div class="big">$${(s.safety.dailyMaxLoss || a.rules.maxDailyLoss).toLocaleString()}</div></div>
-          <div class="card"><h2>Max position</h2><div class="big">${s.safety.maxPositionSize || a.rules.maxPositionSize}</div></div>`;
-        loadRecs(); loadAudit();
+          <div class="card"><h2>Account</h2><div>${a ? a.name : "—"}</div></div>
+          <div class="card"><h2>Balance</h2><div class="big">${a ? "$"+a.balance.toLocaleString() : "—"}</div></div>
+          <div class="card"><h2>Day P&amp;L</h2><div class="big" style="color:${a && a.dayPnl < 0 ? "var(--block)" : "var(--ok)"}">${a ? "$"+a.dayPnl.toLocaleString() : "—"}</div></div>
+          <div class="card"><h2>Max daily loss</h2><div class="big">$${(s.safety.dailyMaxLoss || (a ? a.rules.maxDailyLoss : 0)).toLocaleString()}</div></div>
+          <div class="card">
+            <h2>TopstepX</h2>
+            <div class="big" style="color:${t.connected ? "var(--ok)" : "var(--block)"}">${t.connected ? "Connected" : "Not connected"}</div>
+            <div class="tag">Acct ${t.accountId || "—"} · ${t.accountStatus || "—"}</div>
+            <div class="tag">BP $${(t.availableBuyingPower||0).toLocaleString()} · Pos ${t.openPositions||0}</div>
+            <div class="tag">${t.lastSyncTime ? "synced "+new Date(t.lastSyncTime).toLocaleTimeString() : "never synced"}</div>
+            <div class="actions" style="display:flex;gap:6px;margin-top:6px">
+              <button style="width:auto;padding:5px 10px" class="${t.connected ? "btn-danger" : "btn-ok"}" onclick="topstepx('${t.connected ? "disconnect" : "connect"}')">${t.connected ? "Disconnect" : "Connect"}</button>
+              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="topstepx('sync')">Sync</button>
+              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="testSms()">Test SMS</button>
+            </div>
+          </div>`;
+        loadRecs().catch((e) => showError("recs: " + e.message));
+        loadAudit().catch(() => {});
       }
 
+      window.topstepx = async (action) => {
+        const r = await api("/api/topstepx/" + action, { method: action === "status" ? "GET" : "POST" }).then(j).catch((e) => ({ error: e.message }));
+        if (r.error) showError("TopstepX " + action + ": " + r.error);
+        refresh();
+      };
+      window.testSms = async () => {
+        const r = await api("/api/alerts/sms/test", { method: "POST" }).then(j).catch((e) => ({ ok: false, info: e.message }));
+        alert(r.ok ? "Test SMS sent." : "SMS not sent: " + (r.info || "error"));
+      };
+
       async function loadRecs() {
-        const recs = await api("/api/recommendations").then((r) => r.json());
+        const recs = await api("/api/recommendations").then(j);
         $("recs").innerHTML =
           recs.slice().reverse().map((r) => {
             const viol = r.violations.map((v) => `<li class="v-${v.severity}">[${v.severity}] ${v.message}</li>`).join("");
@@ -184,7 +228,7 @@
       }
 
       async function loadAudit() {
-        const rows = await api("/api/audit").then((r) => r.json());
+        const rows = await api("/api/audit").then(j);
         $("audit").querySelector("tbody").innerHTML = rows
           .map((e) => `<tr><td>${new Date(e.timestamp).toLocaleTimeString()}</td><td>${e.type}</td><td>${e.actor}</td><td class="tag">${JSON.stringify(e.details)}</td></tr>`)
           .join("");
@@ -192,9 +236,13 @@
 
       let SYMBOLS = [];
       async function loadSymbols() {
-        SYMBOLS = await api("/api/symbols").then((r) => r.json());
-        populatePicker();
-        updateNote();
+        try {
+          SYMBOLS = await api("/api/symbols").then(j);
+          populatePicker();
+          updateNote();
+        } catch (e) {
+          showError("symbols: " + e.message);
+        }
       }
       function populatePicker() {
         const cls = $("assetClass").value;
@@ -223,8 +271,31 @@
           $("cStk").checked ? "stocks" : "",
           $("cCry").checked ? "crypto" : "",
         ].filter(Boolean).join(",");
-        $("scan").innerHTML = '<div class="tag">Scanning…</div>';
-        const rows = await api(`/api/scan?limit=8&classes=${classes}`).then((r) => r.json());
+        // Staged progress so "Scan now" never just hangs silently.
+        const stages = [
+          "Connecting to backend",
+          "Scanning Futures",
+          "Scanning Stocks",
+          "Scanning Crypto",
+          "Calculating Avrrio Score",
+          "Generating opportunities",
+        ];
+        let si = 0;
+        $("scan").innerHTML = `<div class="tag" id="scanStage">⏳ ${stages[0]}…</div>`;
+        const timer = setInterval(() => {
+          si = Math.min(si + 1, stages.length - 1);
+          const el = $("scanStage");
+          if (el) el.textContent = `⏳ ${stages[si]}…`;
+        }, 350);
+        let rows;
+        try {
+          rows = await api(`/api/scan?limit=8&classes=${classes}`).then(j);
+        } catch (e) {
+          clearInterval(timer);
+          $("scan").innerHTML = `<div class="v-block">Scan failed: ${e.message}</div>`;
+          return;
+        }
+        clearInterval(timer);
         $("scan").innerHTML = rows.map((r, i) => {
           const color = r.score >= 80 ? "var(--ok)" : r.score >= 60 ? "var(--warn)" : "var(--muted)";
           return `<div class="rec">
@@ -250,7 +321,7 @@
         if (!confirm(label)) return;
         const r = await api(`/api/recommendations/${id}/approve`, {
           method: "POST", body: JSON.stringify({ mode }),
-        }).then((x) => x.json());
+        }).then(j);
         if (r.error) alert("Error: " + r.error);
         refresh();
       };
@@ -270,7 +341,7 @@
           stopLoss: Number($("stop").value),
           target: Number($("target").value),
         };
-        const r = await api("/api/propose", { method: "POST", body: JSON.stringify(idea) }).then((x) => x.json());
+        const r = await api("/api/propose", { method: "POST", body: JSON.stringify(idea) }).then(j);
         if (r.error) { $("proposeErr").textContent = r.error; return; }
         refresh();
       });

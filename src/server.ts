@@ -1,21 +1,28 @@
-import express from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { AvrrioEngine, type ProposeInput } from "./engine.js";
 import { SYMBOLS, type AssetClass } from "./symbols/registry.js";
 
 /**
- * Dashboard server.
+ * Dashboard + API server.
  *
- * Auth: a password gate (DASHBOARD_PASSWORD) protects every mutating route —
- * propose, approve, reject, kill switch. Reads of status/recommendations/audit
- * also require the token when a password is configured.
- *
- * There is no route that places an order directly. The only execution path is
- * approving a stored recommendation, which runs through the OrderExecutor and
- * all safety gates.
+ * Stability: every async route is wrapped so a thrown error always produces a
+ * JSON response instead of hanging the request (which is what surfaced as a 502
+ * with an HTML error page the frontend then failed to parse). A lightweight
+ * /api/health endpoint does no external I/O and is used for platform health checks.
  */
 const here = dirname(fileURLToPath(import.meta.url));
+
+/** Wraps an async handler so rejections flow to the error middleware. */
+const wrap =
+  (fn: (req: Request, res: Response) => Promise<unknown>) =>
+  (req: Request, res: Response, next: NextFunction) =>
+    Promise.resolve(fn(req, res)).catch(next);
 
 async function start() {
   const engine = new AvrrioEngine();
@@ -23,6 +30,13 @@ async function start() {
 
   const app = express();
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false })); // Twilio inbound webhooks
+
+  // Health check — no external I/O, never 502s.
+  app.get(["/api/health", "/healthz"], (_req, res) => {
+    res.json({ ok: true, service: "avrrio-trading-engine", time: new Date().toISOString() });
+  });
+
   app.use(express.static(join(here, "dashboard", "public")));
 
   // --- auth -------------------------------------------------------------
@@ -39,153 +53,217 @@ async function start() {
   const guard = engine.auth.middleware;
 
   // --- status & data (protected) ---------------------------------------
-  app.get("/api/status", guard, async (_req, res) => {
-    const account = await engine.getAccount();
-    res.json({
-      account,
-      offline: engine.client.isOffline,
-      liveTrading: engine.config.execution.liveTradingEnabled,
-      semiAutonomous: engine.config.execution.semiAutonomousEnabled,
-      killSwitch: engine.killSwitch.status(),
-      providers: engine.consensus.availableProviders(),
-      newsEnabled: engine.news.enabled,
-      notifications: {
-        enabled: engine.notifications.enabled,
-        channels: engine.notifications.activeChannels(),
-      },
-      approvalExpiryMinutes: engine.config.queue.approvalExpiryMinutes,
-      warnings: engine.warnings(),
-      journalStats: engine.journal.stats(),
-      safety: engine.config.safety,
-    });
-  });
+  app.get(
+    "/api/status",
+    guard,
+    wrap(async (_req, res) => {
+      // Resilient: a broker/network failure must not 502 the whole dashboard.
+      let account = null;
+      let accountError: string | null = null;
+      try {
+        account = await engine.getAccount();
+      } catch (err) {
+        accountError = err instanceof Error ? err.message : "account unavailable";
+      }
+      res.json({
+        account,
+        accountError,
+        offline: engine.client.isOffline,
+        liveTrading: engine.config.execution.liveTradingEnabled,
+        semiAutonomous: engine.config.execution.semiAutonomousEnabled,
+        killSwitch: engine.killSwitch.status(),
+        topstepx: engine.topstepxStatus(),
+        providers: engine.consensus.availableProviders(),
+        newsEnabled: engine.news.enabled,
+        notifications: {
+          enabled: engine.notifications.enabled,
+          channels: engine.notifications.activeChannels(),
+          smsEnabled: engine.config.notifications.sms.enabled,
+        },
+        approvalExpiryMinutes: engine.config.queue.approvalExpiryMinutes,
+        warnings: engine.warnings(),
+        journalStats: engine.journal.stats(),
+        safety: engine.config.safety,
+      });
+    }),
+  );
 
   app.get("/api/recommendations", guard, (_req, res) => {
     res.json(engine.recommendations.list());
   });
 
-  app.get("/api/audit", guard, async (_req, res) => {
-    res.json(await engine.audit.recent(100));
-  });
+  app.get(
+    "/api/audit",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.audit.recent(100))),
+  );
 
-  app.get("/api/snapshot/:symbol", guard, async (req, res) => {
-    res.json(await engine.snapshot(req.params.symbol ?? ""));
-  });
+  app.get(
+    "/api/snapshot/:symbol",
+    guard,
+    wrap(async (req, res) => res.json(await engine.snapshot(req.params.symbol ?? ""))),
+  );
 
-  app.get("/api/symbols", guard, (_req, res) => {
-    res.json(SYMBOLS);
-  });
+  app.get("/api/symbols", guard, (_req, res) => res.json(SYMBOLS));
 
-  app.get("/api/scan", guard, async (req, res) => {
-    const classesParam = String(req.query.classes ?? "");
-    const classes = classesParam
-      ? (classesParam.split(",").filter(Boolean) as AssetClass[])
-      : undefined;
-    const limit = req.query.limit ? Number(req.query.limit) : undefined;
-    res.json(await engine.scan({ classes, limit }));
-  });
+  app.get(
+    "/api/scan",
+    guard,
+    wrap(async (req, res) => {
+      const classesParam = String(req.query.classes ?? "");
+      const classes = classesParam
+        ? (classesParam.split(",").filter(Boolean) as AssetClass[])
+        : undefined;
+      const limit = req.query.limit ? Number(req.query.limit) : undefined;
+      const results = await engine.scan({ classes, limit });
+      // Alert on the top opportunity if it clears the alert threshold.
+      const top = results[0];
+      if (top && top.tradable) {
+        await engine.alertOpportunity({
+          symbol: top.symbol,
+          direction: top.direction,
+          score: top.score,
+          confidence: top.confidence,
+        });
+      }
+      res.json(results);
+    }),
+  );
 
   // --- workflow (protected) --------------------------------------------
-  app.post("/api/propose", guard, async (req, res) => {
-    try {
-      const rec = await engine.propose(req.body as ProposeInput);
-      res.json(rec);
-    } catch (err) {
-      res
-        .status(400)
-        .json({ error: err instanceof Error ? err.message : "propose failed" });
-    }
-  });
+  app.post(
+    "/api/propose",
+    guard,
+    wrap(async (req, res) => res.json(await engine.propose(req.body as ProposeInput))),
+  );
 
-  app.post("/api/recommendations/:id/approve", guard, async (req, res) => {
-    try {
+  app.post(
+    "/api/recommendations/:id/approve",
+    guard,
+    wrap(async (req, res) => {
       const { mode } = req.body as { mode?: "immediate" | "pre-approved" };
-      const result = await engine.approve(
-        req.params.id ?? "",
-        "operator",
-        mode ?? "immediate",
-      );
-      res.json(result);
-    } catch (err) {
-      res
-        .status(400)
-        .json({ error: err instanceof Error ? err.message : "approve failed" });
-    }
-  });
+      res.json(await engine.approve(req.params.id ?? "", "operator", mode ?? "immediate"));
+    }),
+  );
 
-  app.post("/api/recommendations/:id/reject", guard, async (req, res) => {
-    try {
+  app.post(
+    "/api/recommendations/:id/reject",
+    guard,
+    wrap(async (req, res) => {
       const { reason } = req.body as { reason?: string };
       await engine.reject(req.params.id ?? "", "operator", reason ?? "");
       res.json({ ok: true });
-    } catch (err) {
-      res
-        .status(400)
-        .json({ error: err instanceof Error ? err.message : "reject failed" });
-    }
-  });
+    }),
+  );
 
   // --- kill switch (protected) -----------------------------------------
-  app.post("/api/kill-switch", guard, async (req, res) => {
-    const { engage, reason } = req.body as { engage?: boolean; reason?: string };
-    if (engage) {
-      await engine.engageKill(reason ?? "manual", "operator");
-      res.json(engine.killSwitch.status());
-    } else {
-      const ok = await engine.disengageKill("operator");
-      res.json({ ...engine.killSwitch.status(), disengaged: ok });
-    }
-  });
+  app.post(
+    "/api/kill-switch",
+    guard,
+    wrap(async (req, res) => {
+      const { engage, reason } = req.body as { engage?: boolean; reason?: string };
+      if (engage) {
+        await engine.engageKill(reason ?? "manual", "operator");
+        res.json(engine.killSwitch.status());
+      } else {
+        const ok = await engine.disengageKill("operator");
+        res.json({ ...engine.killSwitch.status(), disengaged: ok });
+      }
+    }),
+  );
 
-  // --- tokenized approve/reject links (from phone notifications) -------
-  // Not behind the password guard — authenticated by the per-recommendation
-  // approval token in the link. Approving via link uses pre-approved mode so the
-  // trade waits for its entry and conditions rather than firing blind.
+  // --- TopstepX connection (protected) ---------------------------------
+  app.get("/api/topstepx/status", guard, (_req, res) => res.json(engine.topstepxStatus()));
+  app.post(
+    "/api/topstepx/connect",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.topstepxConnect())),
+  );
+  app.post("/api/topstepx/disconnect", guard, (_req, res) =>
+    res.json(engine.topstepxDisconnect()),
+  );
+  app.post(
+    "/api/topstepx/sync",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.topstepxSync())),
+  );
+  app.post(
+    "/api/topstepx/execute",
+    guard,
+    wrap(async (req, res) => {
+      const { id } = req.body as { id?: string };
+      res.json(await engine.executeRecommendation(id ?? "", "operator"));
+    }),
+  );
+
+  // --- SMS alerts (protected test) + inbound webhook (number-authorized) -
+  app.post(
+    "/api/alerts/sms/test",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.sendTestSms())),
+  );
+
+  // Twilio posts here (From, Body). Authorized by phone number, not the password.
+  app.post(
+    "/api/alerts/sms/inbound",
+    wrap(async (req, res) => {
+      const body = req.body as { From?: string; Body?: string };
+      const reply = await engine.handleInboundSms(body.From ?? "", body.Body ?? "");
+      // Reply via TwiML so Twilio texts the confirmation back to the sender.
+      res
+        .type("text/xml")
+        .send(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(reply)}</Message></Response>`);
+    }),
+  );
+
+  // --- tokenized approve/reject links (from notifications) -------------
   const page = (title: string, body: string) =>
     `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font:16px system-ui;max-width:480px;margin:60px auto;padding:0 20px"><h2>${title}</h2><p>${body}</p></body>`;
 
-  app.get("/api/approve-trade", async (req, res) => {
-    try {
-      const id = String(req.query.id ?? "");
-      const token = String(req.query.token ?? "");
-      const mode =
-        req.query.mode === "immediate" ? "immediate" : "pre-approved";
-      const result = await engine.approveByToken(id, token, mode);
-      res
-        .status(200)
-        .send(
+  app.get(
+    "/api/approve-trade",
+    wrap(async (req, res) => {
+      try {
+        const mode = req.query.mode === "immediate" ? "immediate" : "pre-approved";
+        const result = await engine.approveByToken(
+          String(req.query.id ?? ""),
+          String(req.query.token ?? ""),
+          mode,
+        );
+        res.status(200).send(
           page(
             "✅ Approved",
             result.armed
-              ? "Trade pre-approved. It will execute when the entry is reached and all risk/news checks still pass, before it expires."
+              ? "Trade pre-approved. It will execute when the entry is reached and all checks still pass, before it expires."
               : `Trade approved and submitted (${result.result?.paper ? "paper" : "LIVE"}).`,
           ),
         );
-    } catch (err) {
-      res
-        .status(400)
-        .send(page("⚠️ Could not approve", err instanceof Error ? err.message : "error"));
-    }
-  });
+      } catch (err) {
+        res.status(400).send(page("⚠️ Could not approve", err instanceof Error ? err.message : "error"));
+      }
+    }),
+  );
 
-  app.get("/api/reject-trade", async (req, res) => {
-    try {
-      await engine.rejectByToken(
-        String(req.query.id ?? ""),
-        String(req.query.token ?? ""),
-      );
-      res.status(200).send(page("🛑 Rejected", "The setup was rejected."));
-    } catch (err) {
-      res
-        .status(400)
-        .send(page("⚠️ Could not reject", err instanceof Error ? err.message : "error"));
-    }
+  app.get(
+    "/api/reject-trade",
+    wrap(async (req, res) => {
+      try {
+        await engine.rejectByToken(String(req.query.id ?? ""), String(req.query.token ?? ""));
+        res.status(200).send(page("🛑 Rejected", "The setup was rejected."));
+      } catch (err) {
+        res.status(400).send(page("⚠️ Could not reject", err instanceof Error ? err.message : "error"));
+      }
+    }),
+  );
+
+  // --- error middleware (last) — always responds, never hangs ----------
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    console.error("API error:", err);
+    res.status(500).json({ error: err instanceof Error ? err.message : "internal error" });
   });
 
   // --- pre-approved queue maintenance loop -----------------------------
-  // Expires stale recommendations and triggers armed (pre-approved) trades.
-  const tick = () =>
-    engine.maintain().catch((e) => console.error("maintain error:", e));
+  const tick = () => engine.maintain().catch((e) => console.error("maintain error:", e));
   setInterval(tick, 20_000);
 
   const port = engine.config.dashboard.port;
@@ -193,6 +271,13 @@ async function start() {
     console.log(`Avrrio dashboard on http://localhost:${port}`);
     for (const w of engine.warnings()) console.warn(`⚠️  ${w}`);
   });
+}
+
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 start().catch((err) => {
