@@ -49,10 +49,29 @@ See [docs/strategy-notes.md](docs/strategy-notes.md) for the staged rollout.
 9. **Audit log** — every decision recorded.
 10. **Default safe mode** — live + semi-autonomous off unless explicitly enabled.
 
+## Symbols & the opportunity scanner
+
+- **Symbol registry** (`src/symbols/registry.ts`) with asset classes:
+  - **Futures** (NQ, MNQ, ES, MES, YM, MYM, RTY, M2K, CL, MCL, GC, MGC) — **tradable** via TopstepX.
+  - **Stocks** (AAPL, TSLA, NVDA, AMD, MSFT, AMZN, META, GOOGL) and **crypto**
+    (BTCUSD, ETHUSD, SOLUSD) — **watchlist / analysis-only** for now.
+  - Manual symbol entry stays available; unknown symbols are analysis-only and
+    **never tradable**. The risk manager and order executor both block any
+    non-futures symbol (`untradable-symbol`).
+- **Scanner + Avrrio Score** (`src/scanner/scanner.ts`) ranks the universe so a
+  beginner sees "today's best setups and why" instead of a blank symbol box.
+  Score = Trend 30% · Volume 20% · News 20% · Momentum 15% · Risk 15% (0–100),
+  with a plain-language "why it's interesting" breakdown per symbol.
+  - Dashboard: **🔥 Top opportunities** panel + asset-class/symbol dropdowns with
+    tradable/watchlist validation.
+  - CLI: `npm run dev -- scan 5`. API: `GET /api/scan?classes=futures,stocks&limit=5`.
+
 ## Modules
 
 | Module | Path |
 |--------|------|
+| Symbol registry (asset classes, tradability) | `src/symbols/registry.ts` |
+| Opportunity scanner + Avrrio Score | `src/scanner/scanner.ts` |
 | Read-only data + guarded order submit | `src/topstep/client.ts` |
 | Market data reader | `src/market/marketData.ts` |
 | Risk manager (full safety stack) | `src/risk/` |

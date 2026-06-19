@@ -30,6 +30,18 @@ async function main() {
     case "snapshot":
       console.log(JSON.stringify(await engine.snapshot(args[0] ?? "NQ"), null, 2));
       break;
+    case "scan": {
+      const limit = args[0] ? Number(args[0]) : 5;
+      const results = await engine.scan({ limit });
+      console.log(`\n🔥 Top ${results.length} Opportunities (Avrrio Score)\n`);
+      results.forEach((r, i) => {
+        console.log(
+          `${i + 1}. ${r.symbol} (${r.name}) — Score ${r.score}/100 · ${r.direction} · ${(r.confidence * 100).toFixed(0)}%${r.tradable ? "" : " [watchlist]"}`,
+        );
+        console.log(`   ${r.reasons.join(" · ")}`);
+      });
+      break;
+    }
     case "evaluate": {
       const { assessment, analysis } = await engine.evaluate(parseIdea(args));
       printAssessment(assessment);
@@ -81,7 +93,7 @@ async function main() {
           "Avrrio Trading Engine — risk-first trading assistant",
           "",
           "Commands:",
-          "  account | snapshot <SYM> | recommendations | kill [on <reason>|off]",
+          "  account | snapshot <SYM> | scan [limit] | recommendations | kill [on <reason>|off]",
           "  evaluate <SYM> <long|short> <size> <entry> <stop> <target>",
           "  propose  <SYM> <long|short> <size> <entry> <stop> <target>",
           "  approve <id> | reject <id> [reason]",

@@ -19,6 +19,8 @@ import {
  * (used by the Phase 1 idea evaluator and unit tests).
  */
 export interface RiskContext {
+  /** Whether the symbol is tradable (futures). Stocks/crypto are watchlist-only. */
+  symbolTradable?: boolean;
   killSwitchEngaged?: boolean;
   /** Result of the news reader for this symbol/window. */
   news?: { blocked: boolean; reason: string };
@@ -55,6 +57,14 @@ export class RiskManager {
     const pv = pointValue(idea.symbol);
 
     // --- highest-priority hard gates ----------------------------------
+    if (context.symbolTradable === false) {
+      violations.push({
+        rule: "untradable-symbol",
+        message: `${idea.symbol} is watchlist/analysis-only and cannot be traded (futures only).`,
+        severity: "block",
+      });
+    }
+
     if (context.killSwitchEngaged) {
       violations.push({
         rule: "kill-switch",

@@ -70,19 +70,36 @@
         <div class="grid" id="account"></div>
 
         <div class="card">
+          <h2>🔥 Top opportunities today (Avrrio Score)</h2>
+          <div class="kill" style="margin-bottom:10px">
+            <label style="margin:0">Scan:</label>
+            <label class="tag"><input type="checkbox" id="cFut" checked style="width:auto"> Futures</label>
+            <label class="tag"><input type="checkbox" id="cStk" checked style="width:auto"> Stocks</label>
+            <label class="tag"><input type="checkbox" id="cCry" checked style="width:auto"> Crypto</label>
+            <button class="btn-ghost" id="scanBtn" style="width:auto;padding:6px 14px">Scan now</button>
+          </div>
+          <div id="scan"></div>
+        </div>
+
+        <div class="card">
           <h2>Propose a trade (AI consensus + risk check, then YOU approve)</h2>
           <div class="row6">
             <div><label>Setup</label><input id="setupName" placeholder="(optional)" /></div>
-            <div><label>Symbol</label><input id="symbol" value="NQ" /></div>
+            <div><label>Asset class</label>
+              <select id="assetClass"><option value="">all</option><option value="futures">futures</option><option value="stocks">stocks</option><option value="crypto">crypto</option></select>
+            </div>
+            <div><label>Symbol</label><select id="symbolPicker"></select></div>
+            <div><label>Symbol (manual)</label><input id="symbol" value="NQ" /></div>
             <div><label>Side</label><select id="side"><option>long</option><option>short</option></select></div>
             <div><label>Size</label><input id="size" type="number" value="1" /></div>
+          </div>
+          <div class="row6" style="margin-top:8px">
             <div><label>Entry</label><input id="entry" type="number" value="20000" /></div>
             <div><label>Stop</label><input id="stop" type="number" value="19960" /></div>
-          </div>
-          <div class="row" style="margin-top:8px">
             <div><label>Target</label><input id="target" type="number" value="20080" /></div>
-            <div style="grid-column: span 2; display:flex; align-items:end">
-              <button class="btn-primary" id="proposeBtn">Generate recommendation</button>
+            <div style="grid-column: span 3; display:flex; align-items:end; gap:8px">
+              <button class="btn-primary" id="proposeBtn" style="width:auto">Generate recommendation</button>
+              <span id="tradeNote" class="tag" style="align-self:center"></span>
             </div>
           </div>
           <div id="proposeErr" class="v-block" style="margin-top:8px"></div>
@@ -120,7 +137,9 @@
         TOKEN = (await r.json()).token;
         $("login").classList.add("hidden");
         $("app").classList.remove("hidden");
-        refresh();
+        await refresh();
+        await loadSymbols();
+        scan();
       }
 
       async function refresh() {
@@ -168,6 +187,59 @@
           .map((e) => `<tr><td>${new Date(e.timestamp).toLocaleTimeString()}</td><td>${e.type}</td><td>${e.actor}</td><td class="tag">${JSON.stringify(e.details)}</td></tr>`)
           .join("");
       }
+
+      let SYMBOLS = [];
+      async function loadSymbols() {
+        SYMBOLS = await api("/api/symbols").then((r) => r.json());
+        populatePicker();
+        updateNote();
+      }
+      function populatePicker() {
+        const cls = $("assetClass").value;
+        const list = SYMBOLS.filter((s) => !cls || s.assetClass === cls);
+        $("symbolPicker").innerHTML =
+          '<option value="">— pick —</option>' +
+          list.map((s) => `<option value="${s.symbol}">${s.symbol} — ${s.name}${s.tradable ? "" : " [watchlist]"}</option>`).join("");
+      }
+      function updateNote() {
+        const sym = ($("symbol").value || "").toUpperCase();
+        const info = SYMBOLS.find((s) => s.symbol === sym);
+        const note = $("tradeNote");
+        if (info && info.tradable) { note.textContent = "✅ Tradable (futures)"; note.style.color = "var(--ok)"; }
+        else if (info) { note.textContent = "👁 Watchlist only — analysis, not tradable"; note.style.color = "var(--warn)"; }
+        else { note.textContent = "⚠ Manual symbol — not tradable"; note.style.color = "var(--warn)"; }
+      }
+      $("assetClass").addEventListener("change", populatePicker);
+      $("symbolPicker").addEventListener("change", () => {
+        if ($("symbolPicker").value) { $("symbol").value = $("symbolPicker").value; updateNote(); }
+      });
+      $("symbol").addEventListener("input", updateNote);
+
+      async function scan() {
+        const classes = [
+          $("cFut").checked ? "futures" : "",
+          $("cStk").checked ? "stocks" : "",
+          $("cCry").checked ? "crypto" : "",
+        ].filter(Boolean).join(",");
+        $("scan").innerHTML = '<div class="tag">Scanning…</div>';
+        const rows = await api(`/api/scan?limit=8&classes=${classes}`).then((r) => r.json());
+        $("scan").innerHTML = rows.map((r, i) => {
+          const color = r.score >= 80 ? "var(--ok)" : r.score >= 60 ? "var(--warn)" : "var(--muted)";
+          return `<div class="rec">
+            <div><b>${i + 1}. ${r.symbol}</b> <span class="tag">${r.name}</span> <span class="pill" style="border-color:${color};color:${color}">Score ${r.score}/100</span>
+              <span class="tag">${r.direction} · ${(r.confidence * 100).toFixed(0)}%${r.tradable ? "" : " · watchlist"}</span></div>
+            <div class="tag">${r.reasons.map((x) => "✓ " + x).join("  ")}</div>
+            <div class="tag">Trend ${r.components.trend|0} · Vol ${r.components.volume|0} · News ${r.components.news|0} · Mom ${r.components.momentum|0} · Risk ${r.components.risk|0}</div>
+            ${r.tradable ? `<div class="actions"><button class="btn-ghost" style="width:auto;padding:6px 14px" onclick="useSymbol('${r.symbol}','${r.assetClass}')">Use in propose ↓</button></div>` : ""}
+          </div>`;
+        }).join("") || '<div class="tag">No results.</div>';
+      }
+      window.useSymbol = (sym, cls) => {
+        $("assetClass").value = cls; populatePicker();
+        $("symbol").value = sym; $("symbolPicker").value = sym; updateNote();
+        document.getElementById("symbol").scrollIntoView({ behavior: "smooth", block: "center" });
+      };
+      $("scanBtn").addEventListener("click", scan);
 
       window.approve = async (id) => {
         if (!confirm("Approve and place this trade?")) return;
