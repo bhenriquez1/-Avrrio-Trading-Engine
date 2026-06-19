@@ -57,6 +57,8 @@ export interface AvrrioConfig {
   };
   notifications: {
     enabled: boolean;
+    /** Avrrio Score at/above which a scanner opportunity triggers an alert. */
+    opportunityAlertScore: number;
     email: {
       enabled: boolean;
       to: string;
@@ -70,9 +72,12 @@ export interface AvrrioConfig {
     };
     sms: {
       enabled: boolean;
+      /** Provider id (currently only "twilio"). */
+      provider: string;
       twilioAccountSid: string;
       twilioAuthToken: string;
       fromNumber: string;
+      /** Authorized phone number for alerts and inbound approval replies. */
       toNumber: string;
     };
   };
@@ -135,6 +140,7 @@ export function loadConfig(): AvrrioConfig {
     },
     notifications: {
       enabled: bool("PHONE_NOTIFICATIONS_ENABLED", false),
+      opportunityAlertScore: num("AVRRIO_ALERT_SCORE", 85),
       email: {
         enabled: bool("EMAIL_NOTIFICATIONS_ENABLED", true),
         to: env("NOTIFICATION_EMAIL_TO"),
@@ -148,10 +154,12 @@ export function loadConfig(): AvrrioConfig {
       },
       sms: {
         enabled: bool("SMS_ENABLED", false),
+        provider: env("SMS_PROVIDER", "twilio"),
         twilioAccountSid: env("TWILIO_ACCOUNT_SID"),
         twilioAuthToken: env("TWILIO_AUTH_TOKEN"),
         fromNumber: env("TWILIO_FROM_NUMBER"),
-        toNumber: env("BRIAN_PHONE_NUMBER"),
+        // ALERT_PHONE_NUMBER is the canonical name; BRIAN_PHONE_NUMBER kept for compat.
+        toNumber: env("ALERT_PHONE_NUMBER", env("BRIAN_PHONE_NUMBER")),
       },
     },
   };

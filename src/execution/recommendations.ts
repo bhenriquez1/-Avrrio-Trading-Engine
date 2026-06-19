@@ -24,6 +24,8 @@ export type ApprovalMode = "immediate" | "pre-approved";
  */
 export interface Recommendation {
   id: string;
+  /** Short human/SMS-friendly reference, e.g. "T-1042". */
+  ref: string;
   createdAt: string;
   setupName: string | null;
   symbol: string;
@@ -37,6 +39,8 @@ export interface Recommendation {
   /** Engine risk approval (no blocking violations). */
   riskApproved: boolean;
   violations: RuleViolation[];
+  /** Avrrio Score (0..100) for the symbol at proposal time, or null. */
+  avrrioScore: number | null;
   consensus: {
     recommendation: Side | "no-trade";
     confidence: number;
@@ -61,7 +65,7 @@ export interface Recommendation {
 
 export type NewRecommendation = Omit<
   Recommendation,
-  "id" | "createdAt" | "status" | "approvalToken"
+  "id" | "ref" | "createdAt" | "status" | "approvalToken"
 >;
 
 export class RecommendationStore {
@@ -82,10 +86,6 @@ export class RecommendationStore {
     return this.items;
   }
 
-  get(id: string): Recommendation | undefined {
-    return this.items.find((r) => r.id === id);
-  }
-
   pending(): Recommendation[] {
     return this.items.filter((r) => r.status === "pending");
   }
@@ -94,6 +94,7 @@ export class RecommendationStore {
     const full: Recommendation = {
       ...rec,
       id: randomUUID(),
+      ref: this.nextRef(),
       createdAt: new Date().toISOString(),
       status: rec.riskApproved ? "pending" : "blocked",
       approvalToken: randomBytes(18).toString("hex"),
@@ -101,6 +102,25 @@ export class RecommendationStore {
     this.items.push(full);
     await this.persist();
     return full;
+  }
+
+  get(idOrRef: string): Recommendation | undefined {
+    return this.items.find((r) => r.id === idOrRef || r.ref === idOrRef);
+  }
+
+  /** Case-insensitive lookup by short ref (e.g. "T-1042"). */
+  findByRef(ref: string): Recommendation | undefined {
+    const key = ref.toUpperCase();
+    return this.items.find((r) => r.ref.toUpperCase() === key);
+  }
+
+  private nextRef(): string {
+    let max = 1041; // first ref will be T-1042
+    for (const r of this.items) {
+      const n = Number((r.ref ?? "").replace(/[^\d]/g, ""));
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+    return `T-${max + 1}`;
   }
 
   /** Pre-approved trades waiting for their entry/conditions to trigger. */

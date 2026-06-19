@@ -49,6 +49,60 @@ See [docs/strategy-notes.md](docs/strategy-notes.md) for the staged rollout.
 9. **Audit log** — every decision recorded.
 10. **Default safe mode** — live + semi-autonomous off unless explicitly enabled.
 
+## SMS alerts & approve-by-reply
+
+Built so you can act on a setup from your phone without opening the dashboard
+(`src/sms/`). When a recommendation is generated, Avrrio texts the full signal:
+
+```
+🚨 Avrrio Trade AI Signal
+Trade ID: T-1042
+Symbol: NQ   Side: LONG
+Entry: 20000  Stop: 19960  Target: 20080
+Risk: 40 pts ($800)  R:R = 1:2
+AI Confidence: 84%   Avrrio Score: 91/100
+Reply YES T-1042 to approve
+Reply NO T-1042 to reject
+Reply STOPALL for Emergency Stop
+```
+
+**Inbound replies** hit `POST /api/alerts/sms/inbound` (Twilio webhook). Commands:
+`YES/APPROVE {ref}`, `NO/REJECT {ref}`, `STOPALL`, `STATUS`, `PENDING`. Only the
+authorized `ALERT_PHONE_NUMBER` is accepted — other numbers are rejected. Every
+command is audited and gets a confirmation reply.
+
+**Approval safety gates (SMS or dashboard):** AI only proposes; approval is
+required; expired signals can't be approved; approval is blocked if the price has
+moved too far from entry, the daily-loss limit is hit, the kill switch is active,
+or — in live mode — TopstepX isn't connected.
+
+- `POST /api/alerts/sms/test` → sends "Avrrio Trade AI test alert successful."
+- Env: `SMS_ENABLED`, `SMS_PROVIDER`, `TWILIO_*`, `ALERT_PHONE_NUMBER`, `AVRRIO_ALERT_SCORE`.
+
+Telegram alerts/commands are a planned follow-up (Phase 2) — SMS first.
+
+## TopstepX connection
+
+Execution is gated on broker readiness. In **live** mode a trade can only execute
+when TopstepX is `connected`, `authenticated`, and the account is `active`;
+otherwise approval is accepted but execution is blocked (with an SMS explaining
+why). In **paper** mode, simulated fills are allowed so the workflow is testable.
+
+- `GET /api/topstepx/status`, `POST /api/topstepx/{connect,disconnect,sync,execute}`
+- Dashboard shows a TopstepX card (connected state, account, buying power, daily
+  P&L, max daily loss, open positions, last sync, Connect/Disconnect/Sync).
+
+## Stability
+
+- `GET /api/health` (and `/healthz`) does no external I/O — use it for the Render
+  health check (`render.yaml`). This is what the platform pings instead of an API
+  route that depends on the broker.
+- Every async route is wrapped so a failure returns JSON, never a hung request
+  (the prior 502 cause). `/api/status` is resilient: a broker/network error
+  returns `accountError` instead of failing the whole dashboard.
+- The frontend parses responses safely — a non-JSON error page shows a banner
+  instead of crashing with `Unexpected token '<'`.
+
 ## Execution modes & the pre-approved queue
 
 Designed for someone who can't watch the screen 9–5:

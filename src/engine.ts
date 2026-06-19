@@ -14,16 +14,32 @@ import { NewsReader } from "./news/newsReader.js";
 import { NotificationManager } from "./notifications/notifier.js";
 import { EmailNotifier } from "./notifications/emailNotifier.js";
 import { TelegramNotifier } from "./notifications/telegramNotifier.js";
-import { SmsNotifier } from "./notifications/smsNotifier.js";
 import { RiskManager, type RiskContext } from "./risk/riskManager.js";
 import { pointValue } from "./risk/rules.js";
-import { Scanner, type ScanOptions, type ScanResult } from "./scanner/scanner.js";
+import {
+  Scanner,
+  scoreSnapshot,
+  type ScanOptions,
+  type ScanResult,
+} from "./scanner/scanner.js";
 import { KillSwitch } from "./safety/killSwitch.js";
 import { findSetup, withinAllowedHours } from "./setups/index.js";
-import { isTradable } from "./symbols/registry.js";
+import { findSymbol, isTradable } from "./symbols/registry.js";
 import { TradeJournal } from "./journal/tradeJournal.js";
 import { TopstepClient } from "./topstep/client.js";
-import type { AccountSummary, OrderResult, Side, TradeIdea } from "./types.js";
+import { sendSms, samePhone } from "./sms/smsClient.js";
+import { parseSmsCommand, type SmsCommand } from "./sms/inbound.js";
+import {
+  formatOpportunitySms,
+  formatSignalSms,
+} from "./sms/messages.js";
+import type {
+  AccountSummary,
+  OrderResult,
+  Side,
+  TopstepStatus,
+  TradeIdea,
+} from "./types.js";
 
 export interface ProposeInput extends TradeIdea {
   /** Optional predefined setup this idea belongs to. */
@@ -74,10 +90,11 @@ export class AvrrioEngine {
       this.recommendations,
       this.audit,
     );
+    // SMS is handled by the dedicated, fully-formatted signal path (sendSignalSms),
+    // so it is not registered here to avoid duplicate texts.
     this.notifications = new NotificationManager(config, [
       new TelegramNotifier(config),
       new EmailNotifier(config),
-      new SmsNotifier(config),
     ]);
     this.auth = new Auth(config);
   }
@@ -141,6 +158,7 @@ export class AvrrioEngine {
     };
 
     const assessment = this.risk.assess(input, account, context);
+    const { score: avrrioScore } = scoreSnapshot(snapshot, news.blocked);
 
     const consensusAgrees =
       consensus.recommendation === input.side &&
@@ -166,6 +184,7 @@ export class AvrrioEngine {
       rewardRiskRatio: assessment.rewardRiskRatio,
       riskApproved: assessment.approved,
       violations: assessment.violations,
+      avrrioScore,
       consensus: {
         recommendation: consensus.recommendation,
         confidence: consensus.confidence,
@@ -197,16 +216,31 @@ export class AvrrioEngine {
     if (autoEligible) {
       // Semi-autonomous: every gate passed, execute now.
       await this.executor.execute(rec, "system");
-    } else if (rec.status === "pending" && this.notifications.enabled) {
+    } else if (rec.status === "pending") {
       // Manual/pre-approved: alert the operator so they can approve from a phone.
-      const results = await this.notifications.notify(rec);
-      await this.audit.log("notification.sent", "system", {
-        recommendationId: rec.id,
-        channels: results.map((r) => `${r.channel}:${r.ok ? "ok" : r.info}`),
-      });
+      if (this.notifications.enabled) {
+        const results = await this.notifications.notify(rec);
+        await this.audit.log("notification.sent", "system", {
+          recommendationId: rec.id,
+          channels: results.map((r) => `${r.channel}:${r.ok ? "ok" : r.info}`),
+        });
+      }
+      // SMS signal with reply-to-approve instructions.
+      await this.sendSignalSms(rec);
     }
 
     return rec;
+  }
+
+  /** Sends the 🚨 signal SMS with YES/NO reply instructions, and audits it. */
+  private async sendSignalSms(rec: Recommendation): Promise<void> {
+    if (!this.config.notifications.sms.enabled) return;
+    const result = await sendSms(this.config, formatSignalSms(rec));
+    await this.audit.log("sms.signal_sent", "system", {
+      ref: rec.ref,
+      ok: result.ok,
+      info: result.info,
+    });
   }
 
   /**
@@ -334,12 +368,177 @@ export class AvrrioEngine {
     return this.executor.execute(rec, "system(pre-approved)");
   }
 
-  engageKill(reason: string, actor: string) {
-    return this.killSwitch.engage(reason, actor);
+  async engageKill(reason: string, actor: string): Promise<void> {
+    await this.killSwitch.engage(reason, actor);
+    if (this.config.notifications.sms.enabled) {
+      const r = await sendSms(
+        this.config,
+        "🛑 Emergency Stop activated. No trades can execute.",
+      );
+      await this.audit.log("sms.emergency_sent", actor, { ok: r.ok, info: r.info });
+    }
   }
 
   disengageKill(actor: string) {
     return this.killSwitch.disengage(actor);
+  }
+
+  // --- TopstepX connection ----------------------------------------------
+  topstepxStatus(): TopstepStatus {
+    return this.client.status();
+  }
+  topstepxConnect(): Promise<TopstepStatus> {
+    return this.client.connect();
+  }
+  topstepxDisconnect(): TopstepStatus {
+    return this.client.disconnect();
+  }
+  topstepxSync(): Promise<TopstepStatus> {
+    return this.client.sync();
+  }
+
+  /**
+   * Execute a stored recommendation by id/ref, gated on TopstepX readiness.
+   * In LIVE mode the broker must be connected, authenticated, and active; in
+   * paper mode a simulated fill is allowed so the workflow is testable.
+   */
+  async executeRecommendation(idOrRef: string, actor: string) {
+    const rec = this.requireLiveRec(idOrRef);
+    this.assertBrokerReady();
+    return this.executor.execute(rec, actor);
+  }
+
+  private assertBrokerReady(): void {
+    if (!this.config.execution.liveTradingEnabled) return; // paper is fine
+    const s = this.client.status();
+    if (!s.connected || !s.authenticated || s.accountStatus !== "active") {
+      throw new Error("TopstepX is not connected/authenticated.");
+    }
+  }
+
+  // --- SMS: outbound test + inbound command handling --------------------
+  async sendTestSms() {
+    const r = await sendSms(this.config, "Avrrio Trade AI test alert successful.");
+    await this.audit.log("sms.test_sent", "operator", { ok: r.ok, info: r.info });
+    return r;
+  }
+
+  /** Optional alert when a high-confidence scanner opportunity is found. */
+  async alertOpportunity(o: {
+    symbol: string;
+    direction: string;
+    score: number;
+    confidence: number;
+  }): Promise<void> {
+    if (!this.config.notifications.sms.enabled) return;
+    if (o.score < this.config.notifications.opportunityAlertScore) return;
+    const name = findSymbol(o.symbol)?.name ?? o.symbol;
+    const r = await sendSms(this.config, formatOpportunitySms({ ...o, name }));
+    await this.audit.log("sms.opportunity_sent", "system", {
+      symbol: o.symbol,
+      score: o.score,
+      ok: r.ok,
+    });
+  }
+
+  /**
+   * Handle an inbound SMS reply. Authorizes by phone number, parses the command,
+   * applies it through the same safety gates as the dashboard, audits it, and
+   * returns the confirmation text to send back.
+   */
+  async handleInboundSms(fromNumber: string, body: string): Promise<string> {
+    const authorized = samePhone(fromNumber, this.config.notifications.sms.toNumber);
+    if (!authorized) {
+      await this.audit.log("sms.unauthorized", fromNumber, { body });
+      return "⚠️ Unauthorized number. Command rejected.";
+    }
+    const cmd = parseSmsCommand(body);
+    await this.audit.log("sms.command", fromNumber, { cmd });
+    return this.applySmsCommand(cmd);
+  }
+
+  private async applySmsCommand(cmd: SmsCommand): Promise<string> {
+    switch (cmd.type) {
+      case "stopall":
+        await this.engageKill("SMS STOPALL", "phone");
+        return "🛑 Emergency Stop activated. No trades can execute.";
+      case "status":
+        return this.smsStatusText();
+      case "pending":
+        return this.smsPendingText();
+      case "approve":
+        return this.approveBySms(cmd.ref);
+      case "reject":
+        return this.rejectBySms(cmd.ref);
+      default:
+        return "Sorry, I didn't understand. Reply YES <id>, NO <id>, STOPALL, STATUS, or PENDING.";
+    }
+  }
+
+  private async approveBySms(ref: string): Promise<string> {
+    const rec = this.recommendations.findByRef(ref);
+    if (!rec) return `⚠️ Trade ${ref} not found.`;
+    if (this.killSwitch.isEngaged()) {
+      return `🛑 Emergency Stop active. Trade ${ref} cannot execute.`;
+    }
+    if (rec.status !== "pending" && rec.status !== "armed") {
+      return `⚠️ Trade ${ref} is ${rec.status} and cannot be approved.`;
+    }
+    if (rec.expiresAt && Date.now() > new Date(rec.expiresAt).getTime()) {
+      rec.status = "expired";
+      await this.recommendations.update(rec);
+      return `⚠️ Trade ${ref} expired. Approval blocked.`;
+    }
+    // Block if the market has moved too far from entry.
+    const quote = await this.client.getQuote(rec.symbol);
+    const tol = this.config.queue.entryTriggerTolerancePct;
+    if (rec.entry > 0 && Math.abs(quote.last - rec.entry) / rec.entry > tol * 50) {
+      return `⚠️ Trade ${ref} blocked: price moved too far from entry ${rec.entry} (now ${quote.last}).`;
+    }
+    // TopstepX readiness gate.
+    if (this.config.execution.liveTradingEnabled) {
+      const s = this.client.status();
+      if (!s.connected || !s.authenticated || s.accountStatus !== "active") {
+        await this.audit.log("sms.approve_blocked", "phone", {
+          ref,
+          reason: "topstepx not connected",
+        });
+        return `⚠️ Trade ${ref} approved, but execution blocked because TopstepX is not connected.`;
+      }
+    }
+    try {
+      const result = await this.approve(rec.id, "phone", "immediate");
+      return `✅ Trade ${ref} approved. ${result.result?.paper ? "Paper fill" : "Order submitted"} (${result.result?.orderId ?? "pending"}).`;
+    } catch (err) {
+      return `⚠️ Trade ${ref} could not execute: ${err instanceof Error ? err.message : "error"}`;
+    }
+  }
+
+  private async rejectBySms(ref: string): Promise<string> {
+    const rec = this.recommendations.findByRef(ref);
+    if (!rec) return `⚠️ Trade ${ref} not found.`;
+    await this.executor.reject(rec, "phone", "rejected via SMS");
+    return `❌ Trade ${ref} rejected.`;
+  }
+
+  private smsStatusText(): string {
+    const t = this.client.status();
+    const ks = this.killSwitch.isEngaged() ? "ENGAGED" : "clear";
+    return [
+      `Avrrio status: ${t.offline ? "demo" : "live"} data`,
+      `TopstepX: ${t.connected ? "connected" : "not connected"} (${t.accountStatus})`,
+      `Day P&L $${t.dailyPnL} · Pending ${this.recommendations.pending().length}`,
+      `Kill switch: ${ks}`,
+    ].join("\n");
+  }
+
+  private smsPendingText(): string {
+    const pending = this.recommendations.pending().concat(this.recommendations.armed());
+    if (pending.length === 0) return "No pending trades.";
+    return pending
+      .slice(0, 5)
+      .map((r) => `${r.ref}: ${r.symbol} ${r.side.toUpperCase()} @ ${r.entry} (${r.status})`)
+      .join("\n");
   }
 
   closePaperTrade(id: string, exit: number, symbol: string) {
@@ -356,4 +555,4 @@ export class AvrrioEngine {
   }
 }
 
-export type { Recommendation, Side };
+export type { Recommendation, Side, TopstepStatus };

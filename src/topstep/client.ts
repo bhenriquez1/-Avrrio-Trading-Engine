@@ -6,6 +6,7 @@ import type {
   OrderRequest,
   OrderResult,
   Quote,
+  TopstepStatus,
 } from "../types.js";
 
 /**
@@ -23,12 +24,73 @@ export class TopstepClient {
   private token: string | null = null;
   private readonly offline: boolean;
 
+  // Connection state (drives execution gating + the dashboard card).
+  private connected = false;
+  private authenticated = false;
+  private lastSyncTime: string | null = null;
+  private lastAccount: AccountSummary | null = null;
+
   constructor(private readonly config: AvrrioConfig) {
     this.offline = !config.topstep.apiKey || !config.topstep.username;
   }
 
   get isOffline(): boolean {
     return this.offline;
+  }
+
+  /** True when a usable session is established (real auth, or demo session). */
+  get isConnected(): boolean {
+    return this.connected;
+  }
+
+  /**
+   * Establish a session. In live mode this authenticates and loads the account;
+   * in offline/demo mode it establishes a paper session so the workflow can be
+   * exercised end to end.
+   */
+  async connect(): Promise<TopstepStatus> {
+    if (!this.offline) {
+      await this.authenticate();
+      this.lastAccount = await this.getAccount();
+      this.authenticated = true;
+    } else {
+      this.lastAccount = await this.getAccount(); // demo account
+      this.authenticated = true;
+    }
+    this.connected = true;
+    this.lastSyncTime = new Date().toISOString();
+    return this.status();
+  }
+
+  disconnect(): TopstepStatus {
+    this.connected = false;
+    this.authenticated = false;
+    this.token = null;
+    return this.status();
+  }
+
+  /** Refresh the cached account snapshot from the broker. */
+  async sync(): Promise<TopstepStatus> {
+    if (!this.connected) return this.status();
+    this.lastAccount = await this.getAccount();
+    this.lastSyncTime = new Date().toISOString();
+    return this.status();
+  }
+
+  status(): TopstepStatus {
+    const acct = this.lastAccount;
+    return {
+      connected: this.connected,
+      authenticated: this.authenticated,
+      offline: this.offline,
+      accountId: acct?.id ?? (this.offline ? "DEMO" : "unknown"),
+      accountStatus: this.connected ? "active" : "inactive",
+      availableBuyingPower: acct?.balance ?? 0,
+      dailyPnL: acct?.dayPnl ?? 0,
+      maxDailyLoss: acct?.rules.maxDailyLoss ?? 0,
+      openPositions: 0,
+      lastSyncTime: this.lastSyncTime,
+    };
   }
 
   /**

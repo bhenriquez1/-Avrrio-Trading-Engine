@@ -88,6 +88,20 @@ export interface RiskAssessment {
   violations: RuleViolation[];
 }
 
+export interface TopstepStatus {
+  connected: boolean;
+  authenticated: boolean;
+  /** True when running on demo data (no real credentials). */
+  offline: boolean;
+  accountId: string;
+  accountStatus: "active" | "inactive" | "unknown";
+  availableBuyingPower: number;
+  dailyPnL: number;
+  maxDailyLoss: number;
+  openPositions: number;
+  lastSyncTime: string | null;
+}
+
 export interface OrderRequest {
   symbol: string;
   side: Side;

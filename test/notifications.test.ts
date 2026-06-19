@@ -12,6 +12,7 @@ import type { Recommendation } from "../src/execution/recommendations.js";
 function fakeRec(): Recommendation {
   return {
     id: "rec-1",
+    ref: "T-1042",
     createdAt: new Date().toISOString(),
     setupName: null,
     symbol: "NQ",
@@ -24,6 +25,7 @@ function fakeRec(): Recommendation {
     rewardRiskRatio: 3,
     riskApproved: true,
     violations: [],
+    avrrioScore: 91,
     consensus: {
       recommendation: "long",
       confidence: 0.84,
