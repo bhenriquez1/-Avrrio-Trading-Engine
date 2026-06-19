@@ -66,11 +66,16 @@ async function main() {
       console.log(JSON.stringify(engine.recommendations.list(), null, 2));
       break;
     case "approve": {
-      if (!args[0]) throw new Error("Usage: approve <id>");
-      const result = await engine.approve(args[0], "cli-operator");
+      if (!args[0]) throw new Error("Usage: approve <id> [immediate|pre-approved]");
+      const mode = args[1] === "pre-approved" ? "pre-approved" : "immediate";
+      const result = await engine.approve(args[0], "cli-operator", mode);
       console.log(JSON.stringify(result, null, 2));
       break;
     }
+    case "tick":
+      await engine.maintain();
+      console.log("maintenance tick complete");
+      break;
     case "reject":
       if (!args[0]) throw new Error("Usage: reject <id>");
       await engine.reject(args[0], "cli-operator", args[1] ?? "");
@@ -96,7 +101,7 @@ async function main() {
           "  account | snapshot <SYM> | scan [limit] | recommendations | kill [on <reason>|off]",
           "  evaluate <SYM> <long|short> <size> <entry> <stop> <target>",
           "  propose  <SYM> <long|short> <size> <entry> <stop> <target>",
-          "  approve <id> | reject <id> [reason]",
+          "  approve <id> [immediate|pre-approved] | reject <id> [reason] | tick",
         ].join("\n"),
       );
   }

@@ -36,6 +36,7 @@
       .v-warn { color: var(--warn); } .v-block { color: var(--block); }
       .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; border: 1px solid var(--line); }
       .pill.pending { color: var(--warn); border-color: var(--warn); }
+      .pill.armed { color: var(--blue); border-color: var(--blue); }
       .pill.executed { color: var(--ok); border-color: var(--ok); }
       .pill.blocked, .pill.rejected { color: var(--block); border-color: var(--block); }
       .rec { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
@@ -147,7 +148,7 @@
         $("warnings").innerHTML = s.warnings.map((w) => `<li>${w}</li>`).join("");
         const a = s.account;
         $("modeTag").textContent =
-          `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · ${s.semiAutonomous ? "semi-auto" : "manual"} · AI: ${s.providers.join("+") || "none"}`;
+          `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · ${s.semiAutonomous ? "semi-auto" : "manual"} · AI: ${s.providers.join("+") || "none"} · alerts: ${s.notifications && s.notifications.enabled ? s.notifications.channels.join("+") : "off"}`;
         $("killBtn").textContent = s.killSwitch.engaged ? "✅ Clear Emergency Stop" : "🛑 Emergency Stop";
         $("killBtn").dataset.engaged = s.killSwitch.engaged ? "1" : "";
         $("account").innerHTML = `
@@ -170,11 +171,12 @@
               <div><b>${r.symbol} ${r.side.toUpperCase()} ×${r.size}</b> <span class="pill ${r.status}">${r.status}</span> ${r.setupName ? '<span class="tag">'+r.setupName+'</span>' : ''}</div>
               <div class="tag">Entry ${r.entry} · Stop ${r.stopLoss} · Target ${r.target} · Risk $${r.riskAmount.toFixed(0)} · R:R ${r.rewardRiskRatio.toFixed(2)}</div>
               <div class="tag">Consensus: <b>${r.consensus.recommendation}</b> (${r.consensus.agreement}/${r.consensus.available} agree, ${(r.consensus.confidence*100).toFixed(0)}%) · ${ops}</div>
-              <div class="tag">News: ${r.news.blocked ? '<span class="v-block">'+r.news.reason+'</span>' : 'clear'} · Auto-eligible: ${r.autoEligible ? "yes" : "no"}</div>
+              <div class="tag">News: ${r.news.blocked ? '<span class="v-block">'+r.news.reason+'</span>' : 'clear'} · Auto-eligible: ${r.autoEligible ? "yes" : "no"}${r.expiresAt ? ' · valid until '+new Date(r.expiresAt).toLocaleTimeString() : ''}</div>
               ${viol ? '<ul>'+viol+'</ul>' : ''}
               ${r.orderResult ? '<div class="tag">Order: '+r.orderResult.orderId+(r.orderResult.paper?" (paper)":" (LIVE)")+'</div>' : ''}
               ${canAct ? `<div class="actions">
-                  <button class="btn-ok" onclick="approve('${r.id}')">Approve Trade</button>
+                  <button class="btn-ok" onclick="approve('${r.id}','immediate')">Approve now</button>
+                  <button class="btn-primary" onclick="approve('${r.id}','pre-approved')">Pre-approve (wait for entry)</button>
                   <button class="btn-danger" onclick="reject('${r.id}')">Reject</button>
                 </div>` : ''}
             </div>`;
@@ -241,9 +243,14 @@
       };
       $("scanBtn").addEventListener("click", scan);
 
-      window.approve = async (id) => {
-        if (!confirm("Approve and place this trade?")) return;
-        const r = await api(`/api/recommendations/${id}/approve`, { method: "POST" }).then((x) => x.json());
+      window.approve = async (id, mode) => {
+        const label = mode === "pre-approved"
+          ? "Pre-approve this trade? It will execute only when the entry is reached and all checks still pass."
+          : "Approve and place this trade now?";
+        if (!confirm(label)) return;
+        const r = await api(`/api/recommendations/${id}/approve`, {
+          method: "POST", body: JSON.stringify({ mode }),
+        }).then((x) => x.json());
         if (r.error) alert("Error: " + r.error);
         refresh();
       };
