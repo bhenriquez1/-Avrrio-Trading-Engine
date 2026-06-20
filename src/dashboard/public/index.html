@@ -178,7 +178,7 @@
         const a = s.account;
         const t = s.topstepx || {};
         $("modeTag").textContent =
-          `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · ${s.semiAutonomous ? "semi-auto" : "manual"} · AI: ${s.providers.join("+") || "none"} · alerts: ${s.notifications && s.notifications.smsEnabled ? "SMS" : (s.notifications && s.notifications.enabled ? s.notifications.channels.join("+") : "off")}`;
+          `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · ${s.semiAutonomous ? "semi-auto" : "manual"} · AI: ${s.providers.join("+") || "none"} · alerts: ${s.notifications ? s.notifications.primaryChannel : "off"}`;
         $("killBtn").textContent = s.killSwitch.engaged ? "✅ Clear Emergency Stop" : "🛑 Emergency Stop";
         $("killBtn").dataset.engaged = s.killSwitch.engaged ? "1" : "";
         $("tradeModeBtn").textContent = `Trading: ${s.liveTrading ? "LIVE" : "paper"}`;
@@ -210,6 +210,8 @@
               <button style="width:auto;padding:5px 10px" class="${t.connected ? "btn-danger" : "btn-ok"}" onclick="topstepx('${t.connected ? "disconnect" : "connect"}')">${t.connected ? "Disconnect" : "Connect"}</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="authTest()">Auth test</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="topstepx('sync')">Sync</button>
+              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="testTelegram()">Test Telegram</button>
+              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="telegramDebug()">Telegram chat ID</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="testSms()">Test SMS</button>
             </div>
           </div>`;
@@ -225,6 +227,14 @@
       window.testSms = async () => {
         const r = await api("/api/alerts/sms/test", { method: "POST" }).then(j).catch((e) => ({ ok: false, info: e.message }));
         alert(r.ok ? "Test SMS sent." : "SMS not sent: " + (r.info || "error"));
+      };
+      window.testTelegram = async () => {
+        const r = await api("/api/alerts/telegram/test", { method: "POST" }).then(j).catch((e) => ({ ok: false, info: e.message }));
+        alert(r.ok ? "Test Telegram sent — check your chat." : "Telegram not sent: " + (r.info || "error"));
+      };
+      window.telegramDebug = async () => {
+        const r = await api("/api/telegram/debug").then(j).catch((e) => ({ ok: false, info: e.message, chatIds: [] }));
+        alert((r.ok ? "✅ " : "⚠️ ") + r.info + (r.chatIds && r.chatIds.length ? "\n\nchat_id(s): " + r.chatIds.join(", ") : ""));
       };
       window.authTest = async () => {
         const r = await api("/api/topstepx/auth-test", { method: "POST" }).then(j).catch((e) => ({ ok: false, message: e.message, present: {}, missing: [] }));

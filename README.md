@@ -68,7 +68,29 @@ Avrrio Score ≥ AVRRIO_ALERT_SCORE (default 85)   AND   reward/risk ≥ AVRRIO_
   **Run scan cycle** button; CLI: `scan-cycle`, `summary`. API: `POST /api/scheduler/run`,
   `POST /api/scheduler/config { enabled, intervalMinutes }`, `POST /api/scheduler/summary`.
 
-## SMS alerts & approve-by-reply
+## Telegram alerts (primary channel)
+
+Telegram is the **primary** alert channel — full trade detail with one-tap
+**APPROVE / REJECT / STOP ALL** buttons (no typing). SMS is the backup.
+
+Setup:
+1. Create a bot with **@BotFather** → `TELEGRAM_BOT_TOKEN`, set `TELEGRAM_ENABLED=true`.
+2. Get your chat id from **@userinfobot**, or click **Telegram chat ID** on the
+   dashboard (`GET /api/telegram/debug` → calls `getUpdates` and returns the
+   `chat_id`s found) after messaging your bot once → `TELEGRAM_CHAT_ID`.
+3. Button presses arrive via a webhook that **auto-registers on startup** when
+   `PUBLIC_BASE_URL` is https (or `POST /api/telegram/set-webhook`).
+
+Each alert sends Trade ID, asset, symbol, long/short, entry, stop, target, size,
+risk/reward, confidence, and Avrrio Score. Pressing **APPROVE** runs the full
+safety stack (valid + not expired, kill switch clear, daily-loss budget, TopstepX
+gate) and executes a **paper** trade while `LIVE_TRADING_ENABLED=false`. Only the
+configured chat id is authorized; every action is audited.
+
+- `POST /api/alerts/telegram/test`, `GET /api/telegram/debug`,
+  `POST /api/telegram/set-webhook`, `POST /api/telegram/webhook` (Telegram → us).
+
+## SMS alerts & approve-by-reply (backup)
 
 Built so you can act on a setup from your phone without opening the dashboard
 (`src/sms/`). When a recommendation is generated, Avrrio texts the full signal:
