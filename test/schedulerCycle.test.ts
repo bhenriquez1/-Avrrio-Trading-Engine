@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadConfig } from "../src/config.js";
 import { Scheduler } from "../src/scheduler/scheduler.js";
+import { RuntimeSettings } from "../src/settings/runtimeSettings.js";
 import type { AvrrioEngine } from "../src/engine.js";
 import type { ScanResult } from "../src/scanner/scanner.js";
 import type { MarketSnapshot } from "../src/market/marketData.js";
@@ -67,7 +68,7 @@ test("only tradable, high-score, directional setups qualify", async () => {
     result({ symbol: "GC", score: 88, direction: "bearish" }), // ok
   ]);
 
-  const sched = new Scheduler(engine, config);
+  const sched = new Scheduler(engine, config, new RuntimeSettings(config));
   const r = await sched.runScanCycle();
   assert.equal(r.scanned, 5);
   assert.deepEqual(proposed.sort(), ["GC", "NQ"]);
@@ -87,7 +88,7 @@ test("alerts are capped at maxAlerts", async () => {
     result({ symbol: "CL" }),
   ]);
 
-  const sched = new Scheduler(engine, config);
+  const sched = new Scheduler(engine, config, new RuntimeSettings(config));
   const r = await sched.runScanCycle();
   assert.equal(r.alerted, 2);
   assert.equal(proposed.length, 2);

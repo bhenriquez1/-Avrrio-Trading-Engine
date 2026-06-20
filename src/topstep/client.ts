@@ -43,6 +43,8 @@ export class TopstepClient {
   private lastAccount: AccountSummary | null = null;
   private connectionState: TopstepConnectionState = "disconnected";
   private message = "Not connected.";
+  private usingFallbackData = false;
+  private fallbackWarned = false;
 
   constructor(private readonly config: AvrrioConfig) {
     this.offline = !config.topstep.apiKey || !config.topstep.username;
@@ -75,7 +77,8 @@ export class TopstepClient {
    */
   async authTest(): Promise<AuthTestResult> {
     const present = this.maskedPresence();
-    const base = { present, authMethod: AUTH_METHOD };
+    const endpoint = `${this.config.topstep.baseUrl}/api/Auth/loginKey`;
+    const base = { present, authMethod: AUTH_METHOD, endpoint };
 
     if (this.offline) {
       const missing = this.missingCredentials();
@@ -92,21 +95,25 @@ export class TopstepClient {
       };
     }
 
-    console.warn("[topstepx] auth-test:", present); // masked, no secrets
+    console.warn(`[topstepx] auth-test POST ${endpoint}`, present); // masked, no secrets
     try {
-      const res = await fetch(
-        `${this.config.topstep.baseUrl}/api/Auth/loginKey`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            userName: this.config.topstep.username,
-            apiKey: this.config.topstep.apiKey,
-          }),
-        },
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          userName: this.config.topstep.username,
+          apiKey: this.config.topstep.apiKey,
+        }),
+      });
+      const raw = await res.text().catch(() => "");
+      // Sanitize: ProjectX echoes no secrets, but truncate + strip any token-like
+      // values defensively before logging.
+      const sanitized = sanitizeBody(raw);
+      console.warn(
+        `[topstepx] auth-test response: HTTP ${res.status} ${endpoint} body=${sanitized}`,
       );
+
       if (!res.ok) {
-        const detail = await res.text().catch(() => "");
         this.setState(
           "invalid_credentials",
           `loginKey returned HTTP ${res.status}.`,
@@ -116,27 +123,38 @@ export class TopstepClient {
           stage: "invalid_credentials",
           missing: [],
           httpStatus: res.status,
-          message: `ProjectX loginKey returned HTTP ${res.status}. Check that TOPSTEP_USERNAME and TOPSTEP_API_KEY are correct, the API key is enabled for this account, and TOPSTEP_API_BASE_URL is right. ${safeDetail(detail)}`,
+          message: `ProjectX loginKey returned HTTP ${res.status}. Check that TOPSTEP_USERNAME and TOPSTEP_API_KEY are correct, the API key is enabled for this account, and TOPSTEP_API_BASE_URL is right. ${sanitized ? "Server said: " + sanitized : ""}`,
           ...base,
         };
       }
-      const data = (await res.json()) as {
-        token?: string;
-        errorMessage?: string;
-        success?: boolean;
-      };
-      if (!data.token) {
-        this.setState("token_not_returned", "No token in loginKey response.");
+
+      const data = parseJson(raw);
+      const token = data.token ?? data.Token ?? data.accessToken;
+      if (!token) {
+        const why =
+          data.errorMessage ??
+          data.message ??
+          (data.success === false ? "success=false" : "");
+        this.setState(
+          "token_not_returned",
+          `No token in loginKey response${why ? ` (${why})` : ""}.`,
+        );
         return {
           ok: false,
           stage: "token_not_returned",
           missing: [],
           httpStatus: res.status,
-          message: `Authenticated request succeeded but no token was returned${data.errorMessage ? `: ${data.errorMessage}` : "."}`,
+          message:
+            `Authenticated request succeeded (HTTP ${res.status}) but no token was returned. ` +
+            (why
+              ? `ProjectX said: "${why}". This usually means the API key is invalid/disabled or the wrong field was supplied. `
+              : "") +
+            `Response: ${sanitized || "(empty)"}`,
           ...base,
         };
       }
-      this.token = data.token;
+
+      this.token = String(token);
       this.authenticated = true;
       this.setState("connected", "Authenticated with ProjectX.");
       return {
@@ -155,7 +173,7 @@ export class TopstepClient {
         stage: "invalid_credentials",
         missing: [],
         httpStatus: null,
-        message: `Could not reach ProjectX at ${this.config.topstep.baseUrl}: ${msg}`,
+        message: `Could not reach ProjectX at ${endpoint}: ${msg}`,
         ...base,
       };
     }
@@ -164,6 +182,17 @@ export class TopstepClient {
   private setState(state: TopstepConnectionState, message: string): void {
     this.connectionState = state;
     this.message = message;
+  }
+
+  /** Records that a market read fell back to demo data (logs once per session). */
+  private noteFallback(err: unknown): void {
+    this.usingFallbackData = true;
+    if (!this.fallbackWarned) {
+      this.fallbackWarned = true;
+      console.warn(
+        `[topstepx] market read failed; using simulated data for scans: ${err instanceof Error ? err.message : "error"}`,
+      );
+    }
   }
 
   get isOffline(): boolean {
@@ -237,6 +266,7 @@ export class TopstepClient {
       offline: this.offline,
       mode: this.config.topstep.mode,
       connectionState: this.connectionState,
+      usingFallbackData: this.usingFallbackData,
       message: this.message,
       accountId: acct?.id ?? (this.offline ? "DEMO" : "unknown"),
       accountStatus: this.connected ? "active" : "inactive",
@@ -263,38 +293,50 @@ export class TopstepClient {
 
   async getQuote(symbol: string): Promise<Quote> {
     if (this.offline) return demoQuote(symbol);
-    await this.ensureAuth();
-    const res = await this.request(
-      `/api/Market/quote?symbol=${encodeURIComponent(symbol)}`,
-      { method: "GET" },
-    );
-    const raw = (await res.json()) as RawQuote;
-    return {
-      symbol,
-      bid: raw.bid,
-      ask: raw.ask,
-      last: raw.last,
-      timestamp: raw.timestamp ?? new Date().toISOString(),
-    };
+    try {
+      await this.ensureAuth();
+      const res = await this.request(
+        `/api/Market/quote?symbol=${encodeURIComponent(symbol)}`,
+        { method: "GET" },
+      );
+      const raw = (await res.json()) as RawQuote;
+      return {
+        symbol,
+        bid: raw.bid,
+        ask: raw.ask,
+        last: raw.last,
+        timestamp: raw.timestamp ?? new Date().toISOString(),
+      };
+    } catch (err) {
+      // Don't let a broken auth crash the scanner — fall back to demo data and
+      // flag it so the dashboard can warn that market data is simulated.
+      this.noteFallback(err);
+      return demoQuote(symbol);
+    }
   }
 
   async getBars(symbol: string, limit = 50): Promise<Bar[]> {
     if (this.offline) return demoBars(symbol, limit);
-    await this.ensureAuth();
-    const res = await this.request("/api/Market/bars", {
-      method: "POST",
-      body: JSON.stringify({ symbol, limit }),
-    });
-    const data = (await res.json()) as { bars?: RawBar[] };
-    return (data.bars ?? []).map((b) => ({
-      symbol,
-      timestamp: b.t,
-      open: b.o,
-      high: b.h,
-      low: b.l,
-      close: b.c,
-      volume: b.v,
-    }));
+    try {
+      await this.ensureAuth();
+      const res = await this.request("/api/Market/bars", {
+        method: "POST",
+        body: JSON.stringify({ symbol, limit }),
+      });
+      const data = (await res.json()) as { bars?: RawBar[] };
+      return (data.bars ?? []).map((b) => ({
+        symbol,
+        timestamp: b.t,
+        open: b.o,
+        high: b.h,
+        low: b.l,
+        close: b.c,
+        volume: b.v,
+      }));
+    } catch (err) {
+      this.noteFallback(err);
+      return demoBars(symbol, limit);
+    }
   }
 
   /**
@@ -377,10 +419,32 @@ function maskValue(v: string): string {
   return v ? "set" : "missing";
 }
 
-/** Trims and truncates a server error body for safe inclusion in messages. */
-function safeDetail(s: string): string {
-  const t = s.replace(/\s+/g, " ").trim();
-  return t ? `Server said: ${t.slice(0, 160)}` : "";
+/**
+ * Sanitizes a response body for safe logging/display: collapses whitespace,
+ * truncates, and redacts any long token-like values defensively.
+ */
+function sanitizeBody(s: string): string {
+  return s
+    .replace(/\s+/g, " ")
+    .replace(/("?(?:token|accessToken|apiKey)"?\s*[:=]\s*"?)[A-Za-z0-9._-]{8,}/gi, "$1<redacted>")
+    .trim()
+    .slice(0, 200);
+}
+
+/** Parses JSON defensively; returns {} on failure. */
+function parseJson(s: string): {
+  token?: string;
+  Token?: string;
+  accessToken?: string;
+  errorMessage?: string;
+  message?: string;
+  success?: boolean;
+} {
+  try {
+    return JSON.parse(s) as Record<string, never>;
+  } catch {
+    return {};
+  }
 }
 
 // --- raw wire shapes (best-effort; confirm against ProjectX docs) ---------

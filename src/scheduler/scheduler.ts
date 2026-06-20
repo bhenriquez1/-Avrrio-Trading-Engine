@@ -1,6 +1,7 @@
 import type { AvrrioConfig } from "../config.js";
 import type { AvrrioEngine } from "../engine.js";
 import { suggestLevels } from "../scanner/scanner.js";
+import type { RuntimeSettings } from "../settings/runtimeSettings.js";
 import type { Side } from "../types.js";
 
 export interface ScanCycleResult {
@@ -27,28 +28,35 @@ export interface ScanCycleResult {
 export class Scheduler {
   private timer: NodeJS.Timeout | null = null;
   private scansToday = 0;
+  private scanDay = "";
   private summaryDay = ""; // YYYY-MM-DD the summary was last sent
+  private lastScanTime: string | null = null;
+  private lastAlertTime: string | null = null;
   private readonly minScore: number;
 
   constructor(
     private readonly engine: AvrrioEngine,
     private readonly config: AvrrioConfig,
+    private readonly settings: RuntimeSettings,
   ) {
     this.minScore = config.notifications.opportunityAlertScore;
   }
 
   get enabled(): boolean {
-    return this.config.scheduler.enabled;
+    return this.settings.isSchedulerEnabled();
+  }
+  get intervalMinutes(): number {
+    return this.settings.getSchedulerInterval();
   }
 
   start(): void {
     if (!this.enabled || this.timer) return;
-    const ms = Math.max(1, this.config.scheduler.intervalMinutes) * 60_000;
+    const ms = Math.max(1, this.intervalMinutes) * 60_000;
     this.timer = setInterval(() => {
       void this.tick();
     }, ms);
     console.log(
-      `Scheduled scanner ON: every ${this.config.scheduler.intervalMinutes} min, ` +
+      `Scheduled scanner ON: every ${this.intervalMinutes} min, ` +
         `score>=${this.minScore}, R/R>=${this.config.scheduler.minRewardRisk}, top ${this.config.scheduler.maxAlerts}.`,
     );
   }
@@ -56,6 +64,13 @@ export class Scheduler {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  /** Apply a runtime enable/disable + interval change and (re)start the timer. */
+  async configure(enabled: boolean, intervalMinutes?: number): Promise<void> {
+    await this.settings.setScheduler(enabled, intervalMinutes);
+    this.stop();
+    if (enabled) this.start();
   }
 
   private async tick(): Promise<void> {
@@ -69,7 +84,13 @@ export class Scheduler {
 
   /** Runs one scan cycle and creates/alerts qualifying recommendations. */
   async runScanCycle(): Promise<ScanCycleResult> {
+    const today = new Date().toISOString().slice(0, 10);
+    if (this.scanDay !== today) {
+      this.scanDay = today;
+      this.scansToday = 0;
+    }
     this.scansToday++;
+    this.lastScanTime = new Date().toISOString();
     const results = await this.engine.scan({ limit: 12 });
     const minRR = this.config.scheduler.minRewardRisk;
 
@@ -104,6 +125,7 @@ export class Scheduler {
       if (rec.status === "pending") {
         alerted++;
         refs.push(rec.ref);
+        this.lastAlertTime = new Date().toISOString();
         await this.engine.audit.log("scheduler.alert", "system", {
           ref: rec.ref,
           symbol: rec.symbol,
@@ -136,7 +158,13 @@ export class Scheduler {
   }
 
   stats() {
-    return { enabled: this.enabled, scansToday: this.scansToday };
+    return {
+      enabled: this.enabled,
+      intervalMinutes: this.intervalMinutes,
+      scansToday: this.scansToday,
+      lastScanTime: this.lastScanTime,
+      lastAlertTime: this.lastAlertTime,
+    };
   }
 }
 

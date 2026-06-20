@@ -104,6 +104,8 @@ export interface TopstepStatus {
   offline: boolean;
   mode: "practice" | "live";
   connectionState: TopstepConnectionState;
+  /** True when market reads fell back to simulated data (e.g. auth failed). */
+  usingFallbackData: boolean;
   /** Last human-readable connection message (debug-safe, no secrets). */
   message: string;
   accountId: string;
@@ -131,6 +133,8 @@ export interface AuthTestResult {
   httpStatus: number | null;
   /** The auth method this build uses. */
   authMethod: string;
+  /** The exact endpoint that was called. */
+  endpoint: string;
   message: string;
 }
 

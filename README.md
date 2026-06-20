@@ -62,7 +62,11 @@ Avrrio Score ≥ AVRRIO_ALERT_SCORE (default 85)   AND   reward/risk ≥ AVRRIO_
 - **Sends nothing when nothing qualifies.** Capped at `AVRRIO_MAX_ALERTS` (default 3) per cycle; duplicate open symbols are skipped.
 - Each qualifying setup becomes a pending recommendation with synthesized entry/stop/target (~3:1 R/R) and fires the 🚨 signal SMS (`YES/NO/STOPALL`). Approvals run the full safety + TopstepX gates; with `LIVE_TRADING_ENABLED=false` they fill in paper.
 - **Daily summary:** set `DAILY_SUMMARY_HOUR` (0–23, local; -1 disables) to text an end-of-day report (scans, signals, approved, rejected, win rate, P&L).
-- Off by default (`SCHEDULED_SCANNER_ENABLED=false`). Dashboard has a **Run scan cycle** button; CLI: `scan-cycle`, `summary`. API: `POST /api/scheduler/run`, `POST /api/scheduler/summary`.
+- Off by default (`SCHEDULED_SCANNER_ENABLED=false`), but you can **enable/disable
+  it and set the interval at runtime** from the dashboard (persisted) — no redeploy.
+  Status shows scans today, last scan time, and last alert time. Dashboard has a
+  **Run scan cycle** button; CLI: `scan-cycle`, `summary`. API: `POST /api/scheduler/run`,
+  `POST /api/scheduler/config { enabled, intervalMinutes }`, `POST /api/scheduler/summary`.
 
 ## SMS alerts & approve-by-reply
 
@@ -109,10 +113,16 @@ are accepted for account selection but loginKey only needs username + API key.
 naming or wrong credentials. Diagnose without guessing:
 
 - **Dashboard → "Auth test"** (or `POST /api/topstepx/auth-test`) reports the exact
-  stage — `missing_credentials` (and which), `invalid_credentials` (with HTTP
-  status), `token_not_returned`, or `connected` — plus a **masked** presence map
-  for each var (never logs secrets). Connect never returns a bare 401; it surfaces
-  the structured state.
+  **endpoint called**, HTTP **status**, stage — `missing_credentials` (and which),
+  `invalid_credentials`, `token_not_returned` (with the **sanitized ProjectX
+  response / errorMessage** so you can see *why* no token), or `connected` — plus a
+  **masked** presence map (never logs secrets). Connect never returns a bare 401.
+- **`token_not_returned`** means ProjectX accepted the request (HTTP 200) but sent
+  no token — almost always an invalid/disabled API key or wrong field. The
+  sanitized response body in the auth-test result tells you what it said.
+- **Scans don't crash on a broken connection** — if market reads fail, the scanner
+  falls back to **simulated** data and the dashboard warns (`usingFallbackData`).
+  Account sync and execution still require a valid token.
 - **Env var names are normalized** (case-insensitive, with fallbacks), so
   `TOPSTEP_Practice_Username` etc. are picked up — but use the canonical names:
 

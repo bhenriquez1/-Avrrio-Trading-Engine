@@ -15,6 +15,7 @@ export interface AvrrioConfig {
     password: string;
     apiKey: string;
     accountName: string;
+    accountId: string;
   };
   ai: {
     anthropicApiKey: string;
@@ -157,6 +158,7 @@ export function loadConfig(): AvrrioConfig {
         "TOPSTEP_ACCOUNTNAME",
         "TOPSTEP_PRACTICE_ACCOUNT_NAME",
       ]),
+      accountId: envAny(["TOPSTEP_ACCOUNT_ID", "TOPSTEP_ACCOUNTID"]),
     },
     ai: {
       anthropicApiKey: env("ANTHROPIC_API_KEY"),
@@ -228,6 +230,33 @@ export function loadConfig(): AvrrioConfig {
  * Surfaced in the dashboard and CLI so the operator always knows the engine's
  * safety posture.
  */
+/**
+ * Warns when deprecated/variant env names are present, nudging the operator to
+ * the canonical names. Legacy names still work (via envAny) but are discouraged.
+ */
+export function legacyEnvWarnings(): string[] {
+  const present = new Set(Object.keys(process.env).map((k) => k.toLowerCase()));
+  const legacy: Array<[string, string]> = [
+    ["TOPSTEP_PRACTICE_USERNAME", "TOPSTEP_USERNAME"],
+    ["TOPSTEP_USER", "TOPSTEP_USERNAME"],
+    ["TOPSTEP_PRACTICE_PASSWORD", "TOPSTEP_PASSWORD"],
+    ["TOPSTEP_APIKEY", "TOPSTEP_API_KEY"],
+    ["PROJECTX_API_KEY", "TOPSTEP_API_KEY"],
+    ["TOPSTEP_BASE_URL", "TOPSTEP_API_BASE_URL"],
+    ["TOPSTEP_ACCOUNTNAME", "TOPSTEP_ACCOUNT_NAME"],
+    ["BRIAN_PHONE_NUMBER", "ALERT_PHONE_NUMBER"],
+  ];
+  const warnings: string[] = [];
+  for (const [old, canonical] of legacy) {
+    if (present.has(old.toLowerCase())) {
+      warnings.push(
+        `Legacy env var "${old}" is set — rename it to "${canonical}". The old name still works for now.`,
+      );
+    }
+  }
+  return warnings;
+}
+
 export function configWarnings(config: AvrrioConfig): string[] {
   const warnings: string[] = [];
   if (!config.topstep.apiKey || !config.topstep.username) {
@@ -238,6 +267,7 @@ export function configWarnings(config: AvrrioConfig): string[] {
       `TopstepX not connectable — missing ${missing.join(", ")} (mode=${config.topstep.mode}). Running in OFFLINE/demo mode. Use POST /api/topstepx/auth-test for details.`,
     );
   }
+  warnings.push(...legacyEnvWarnings());
   if (!config.ai.anthropicApiKey) {
     warnings.push(
       "ANTHROPIC_API_KEY is not set — Claude analysis is disabled.",
