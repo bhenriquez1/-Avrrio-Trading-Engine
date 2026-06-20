@@ -136,9 +136,9 @@ function envAny(names: string[], fallback = ""): string {
 
 export function loadConfig(): AvrrioConfig {
   const mode =
-    env("TOPSTEP_MODE", "practice").toLowerCase() === "live"
-      ? "live"
-      : "practice";
+    env("TOPSTEP_MODE", "live").toLowerCase() === "practice"
+      ? "practice"
+      : "live";
   return {
     topstep: {
       mode,

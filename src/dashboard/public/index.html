@@ -194,25 +194,26 @@
           $("schedTimes").textContent = `last scan ${sc.lastScanTime ? new Date(sc.lastScanTime).toLocaleTimeString() : "—"} · last alert ${sc.lastAlertTime ? new Date(sc.lastAlertTime).toLocaleTimeString() : "—"}`;
         }
         if (t.usingFallbackData) showError("TopstepX market data unavailable — scans are using SIMULATED data. Fix the connection (Auth test).");
-        if (s.notifications && s.notifications.smsMissing && s.notifications.smsMissing.length) showError("SMS not configured — missing: " + s.notifications.smsMissing.join(", "));
+        if (s.notifications && s.notifications.smsEnabled && s.notifications.smsMissing && s.notifications.smsMissing.length) showError("SMS not configured — missing: " + s.notifications.smsMissing.join(", "));
         $("account").innerHTML = `
           <div class="card"><h2>Account</h2><div>${a ? a.name : "—"}</div></div>
           <div class="card"><h2>Balance</h2><div class="big">${a ? "$"+a.balance.toLocaleString() : "—"}</div></div>
           <div class="card"><h2>Day P&amp;L</h2><div class="big" style="color:${a && a.dayPnl < 0 ? "var(--block)" : "var(--ok)"}">${a ? "$"+a.dayPnl.toLocaleString() : "—"}</div></div>
           <div class="card"><h2>Max daily loss</h2><div class="big">$${(s.safety.dailyMaxLoss || (a ? a.rules.maxDailyLoss : 0)).toLocaleString()}</div></div>
           <div class="card">
-            <h2>TopstepX (${t.mode || "practice"})</h2>
+            <h2>TopstepX (${t.mode || "live"})</h2>
             <div class="big" style="color:${stateColor(t.connectionState)}">${stateLabel(t.connectionState)}</div>
+            <div class="tag">ProjectX auth: <b style="color:${t.authenticated ? "var(--ok)" : "var(--block)"}">${t.authenticated ? "connected" : "failed"}</b> · TopstepX account: <b style="color:${t.connected ? "var(--ok)" : "var(--block)"}">${t.connected ? "connected" : "failed"}</b></div>
             <div class="tag">${t.message || ""}</div>
-            <div class="tag">Acct ${t.accountId || "—"} · ${t.accountStatus || "—"} · BP $${(t.availableBuyingPower||0).toLocaleString()} · Pos ${t.openPositions||0}</div>
-            <div class="tag">${t.lastSyncTime ? "synced "+new Date(t.lastSyncTime).toLocaleTimeString() : "never synced"}</div>
+            <div class="tag">Account ID ${t.accountId || "—"} · Buying power $${(t.availableBuyingPower||0).toLocaleString()} · Daily P&amp;L $${(t.dailyPnL||0).toLocaleString()} · Open positions ${t.openPositions||0}</div>
+            <div class="tag">Last sync: ${t.lastSyncTime ? new Date(t.lastSyncTime).toLocaleTimeString() : "never"}</div>
             <div class="actions" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
               <button style="width:auto;padding:5px 10px" class="${t.connected ? "btn-danger" : "btn-ok"}" onclick="topstepx('${t.connected ? "disconnect" : "connect"}')">${t.connected ? "Disconnect" : "Connect"}</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="authTest()">Auth test</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="topstepx('sync')">Sync</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="testTelegram()">Test Telegram</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="telegramDebug()">Telegram chat ID</button>
-              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="testSms()">Test SMS</button>
+              ${s.notifications && s.notifications.smsEnabled ? `<button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="testSms()">Test SMS</button>` : ""}
             </div>
           </div>`;
         loadRecs().catch((e) => showError("recs: " + e.message));

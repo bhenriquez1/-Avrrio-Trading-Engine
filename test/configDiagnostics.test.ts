@@ -3,8 +3,9 @@ import { test } from "node:test";
 import { loadConfig, legacyEnvWarnings } from "../src/config.js";
 import { smsMissing } from "../src/sms/smsClient.js";
 
-test("smsMissing lists exactly the missing Twilio vars", () => {
+test("smsMissing lists exactly the missing Twilio vars when SMS is enabled", () => {
   const config = loadConfig();
+  config.notifications.sms.enabled = true;
   config.notifications.sms.twilioAccountSid = "";
   config.notifications.sms.twilioAuthToken = "tok";
   config.notifications.sms.fromNumber = "";
@@ -17,10 +18,21 @@ test("smsMissing lists exactly the missing Twilio vars", () => {
 
 test("smsMissing is empty when fully configured", () => {
   const config = loadConfig();
+  config.notifications.sms.enabled = true;
   config.notifications.sms.twilioAccountSid = "AC1";
   config.notifications.sms.twilioAuthToken = "tok";
   config.notifications.sms.fromNumber = "+15550000000";
   config.notifications.sms.toNumber = "+15551234567";
+  assert.deepEqual(smsMissing(config), []);
+});
+
+test("smsMissing is empty when SMS is disabled, even with no Twilio vars set", () => {
+  const config = loadConfig();
+  config.notifications.sms.enabled = false;
+  config.notifications.sms.twilioAccountSid = "";
+  config.notifications.sms.twilioAuthToken = "";
+  config.notifications.sms.fromNumber = "";
+  config.notifications.sms.toNumber = "";
   assert.deepEqual(smsMissing(config), []);
 });
 
