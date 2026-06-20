@@ -49,6 +49,21 @@ See [docs/strategy-notes.md](docs/strategy-notes.md) for the staged rollout.
 9. **Audit log** — every decision recorded.
 10. **Default safe mode** — live + semi-autonomous off unless explicitly enabled.
 
+## Scheduled opportunity scanner
+
+For a 9–5 schedule: every `SCAN_INTERVAL_MINUTES` (default 20) Avrrio scans
+futures, stocks, and crypto, scores them, and **only alerts on the best, tradable
+futures setups** — so your phone gets the top 1–3 ideas, not noise:
+
+```
+Avrrio Score ≥ AVRRIO_ALERT_SCORE (default 85)   AND   reward/risk ≥ AVRRIO_MIN_RR (default 2)
+```
+
+- **Sends nothing when nothing qualifies.** Capped at `AVRRIO_MAX_ALERTS` (default 3) per cycle; duplicate open symbols are skipped.
+- Each qualifying setup becomes a pending recommendation with synthesized entry/stop/target (~3:1 R/R) and fires the 🚨 signal SMS (`YES/NO/STOPALL`). Approvals run the full safety + TopstepX gates; with `LIVE_TRADING_ENABLED=false` they fill in paper.
+- **Daily summary:** set `DAILY_SUMMARY_HOUR` (0–23, local; -1 disables) to text an end-of-day report (scans, signals, approved, rejected, win rate, P&L).
+- Off by default (`SCHEDULED_SCANNER_ENABLED=false`). Dashboard has a **Run scan cycle** button; CLI: `scan-cycle`, `summary`. API: `POST /api/scheduler/run`, `POST /api/scheduler/summary`.
+
 ## SMS alerts & approve-by-reply
 
 Built so you can act on a setup from your phone without opening the dashboard

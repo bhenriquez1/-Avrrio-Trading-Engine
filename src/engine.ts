@@ -17,6 +17,7 @@ import { TelegramNotifier } from "./notifications/telegramNotifier.js";
 import { RiskManager, type RiskContext } from "./risk/riskManager.js";
 import { pointValue } from "./risk/rules.js";
 import { RuntimeSettings } from "./settings/runtimeSettings.js";
+import { Scheduler } from "./scheduler/scheduler.js";
 import {
   Scanner,
   scoreSnapshot,
@@ -71,6 +72,7 @@ export class AvrrioEngine {
   readonly executor: OrderExecutor;
   readonly notifications: NotificationManager;
   readonly settings: RuntimeSettings;
+  readonly scheduler: Scheduler;
   readonly auth: Auth;
 
   constructor(config = loadConfig()) {
@@ -101,6 +103,7 @@ export class AvrrioEngine {
       new EmailNotifier(config),
     ]);
     this.auth = new Auth(config);
+    this.scheduler = new Scheduler(this, config);
   }
 
   async init(): Promise<void> {
@@ -438,6 +441,41 @@ export class AvrrioEngine {
     const r = await sendSms(this.config, "Avrrio Trade AI test alert successful.");
     await this.audit.log("sms.test_sent", "operator", { ok: r.ok, info: r.info });
     return r;
+  }
+
+  /** Send a free-text SMS to the alert number (used for the daily summary). */
+  async notifyText(text: string, type = "sms.notify"): Promise<void> {
+    if (!this.config.notifications.sms.enabled) return;
+    const r = await sendSms(this.config, text);
+    await this.audit.log(type, "system", { ok: r.ok, info: r.info });
+  }
+
+  /** Build the end-of-day report from today's recommendations + journal. */
+  dailySummaryText(scans: number): string {
+    const today = new Date().toISOString().slice(0, 10);
+    const todays = this.recommendations
+      .list()
+      .filter((r) => r.createdAt.slice(0, 10) === today);
+    const signals = todays.length;
+    const approved = todays.filter(
+      (r) => r.status === "executed" || r.status === "approved",
+    ).length;
+    const rejected = todays.filter((r) => r.status === "rejected").length;
+    const stats = this.journal.stats();
+    const closed = this.journal
+      .list()
+      .filter((e) => e.status === "closed" && (e.realizedPnl ?? 0) !== 0);
+    const wins = closed.filter((e) => (e.realizedPnl ?? 0) > 0).length;
+    const winRate = closed.length ? (wins / closed.length) * 100 : 0;
+    return [
+      "📊 AVRRIO DAILY REPORT",
+      `Scans: ${scans}`,
+      `Signals: ${signals}`,
+      `Approved: ${approved}`,
+      `Rejected: ${rejected}`,
+      `Win Rate: ${winRate.toFixed(1)}%`,
+      `PnL: ${stats.realizedPnl >= 0 ? "+" : ""}$${stats.realizedPnl.toFixed(0)}`,
+    ].join("\n");
   }
 
   /** Optional alert when a high-confidence scanner opportunity is found. */

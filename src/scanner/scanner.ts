@@ -91,6 +91,25 @@ export class Scanner {
   }
 }
 
+/**
+ * Suggest entry/stop/target for a scheduled-scanner signal, sized so reward/risk
+ * is ~3:1. Stop distance is derived from recent volatility (average bar range).
+ */
+export function suggestLevels(
+  snapshot: MarketSnapshot,
+  side: "long" | "short",
+): { entry: number; stopLoss: number; target: number } {
+  const last = snapshot.quote.last || snapshot.structure.sma || 0;
+  const ranges = snapshot.bars.map((b) => b.high - b.low);
+  const atr = ranges.length
+    ? ranges.reduce((a, b) => a + b, 0) / ranges.length
+    : last * 0.001;
+  const stopDist = Math.max(atr, last * 0.0005);
+  return side === "long"
+    ? { entry: last, stopLoss: last - stopDist, target: last + 3 * stopDist }
+    : { entry: last, stopLoss: last + stopDist, target: last - 3 * stopDist };
+}
+
 /** Score a single snapshot (reuses already-fetched market data). */
 export function scoreSnapshot(
   snapshot: MarketSnapshot,

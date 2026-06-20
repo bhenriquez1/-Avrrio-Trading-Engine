@@ -81,6 +81,7 @@ async function start() {
           smsEnabled: engine.config.notifications.sms.enabled,
         },
         approvalExpiryMinutes: engine.config.queue.approvalExpiryMinutes,
+        scheduler: engine.scheduler.stats(),
         warnings: engine.warnings(),
         journalStats: engine.journal.stats(),
         safety: engine.config.safety,
@@ -202,6 +203,22 @@ async function start() {
     wrap(async (_req, res) => res.json(await engine.topstepxAuthTest())),
   );
 
+  // --- scheduled scanner (manual run + daily summary) ------------------
+  app.post(
+    "/api/scheduler/run",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.scheduler.runScanCycle())),
+  );
+  app.post(
+    "/api/scheduler/summary",
+    guard,
+    wrap(async (_req, res) => {
+      const text = engine.dailySummaryText(engine.scheduler.stats().scansToday);
+      await engine.notifyText(text, "scheduler.daily_summary");
+      res.json({ text });
+    }),
+  );
+
   // --- runtime trading mode toggle (paper/live) ------------------------
   app.post(
     "/api/settings",
@@ -289,6 +306,7 @@ async function start() {
   app.listen(port, () => {
     console.log(`Avrrio dashboard on http://localhost:${port}`);
     for (const w of engine.warnings()) console.warn(`⚠️  ${w}`);
+    engine.scheduler.start(); // no-op unless SCHEDULED_SCANNER_ENABLED=true
   });
 }
 

@@ -76,6 +76,14 @@ async function main() {
       await engine.maintain();
       console.log("maintenance tick complete");
       break;
+    case "scan-cycle": {
+      const result = await engine.scheduler.runScanCycle();
+      console.log(JSON.stringify(result, null, 2));
+      break;
+    }
+    case "summary":
+      console.log(engine.dailySummaryText(engine.scheduler.stats().scansToday));
+      break;
     case "reject":
       if (!args[0]) throw new Error("Usage: reject <id>");
       await engine.reject(args[0], "cli-operator", args[1] ?? "");
@@ -98,7 +106,7 @@ async function main() {
           "Avrrio Trading Engine — risk-first trading assistant",
           "",
           "Commands:",
-          "  account | snapshot <SYM> | scan [limit] | recommendations | kill [on <reason>|off]",
+          "  account | snapshot <SYM> | scan [limit] | scan-cycle | summary | recommendations | kill [on <reason>|off]",
           "  evaluate <SYM> <long|short> <size> <entry> <stop> <target>",
           "  propose  <SYM> <long|short> <size> <entry> <stop> <target>",
           "  approve <id> [immediate|pre-approved] | reject <id> [reason] | tick",
