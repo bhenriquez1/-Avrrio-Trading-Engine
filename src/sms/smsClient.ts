@@ -3,6 +3,19 @@ import type { AvrrioConfig } from "../config.js";
 export interface SmsSendResult {
   ok: boolean;
   info: string;
+  /** Specific env vars missing (empty when fully configured). */
+  missing?: string[];
+}
+
+/** Returns the exact Twilio/SMS env vars that are missing. */
+export function smsMissing(config: AvrrioConfig): string[] {
+  const s = config.notifications.sms;
+  const missing: string[] = [];
+  if (!s.twilioAccountSid) missing.push("TWILIO_ACCOUNT_SID");
+  if (!s.twilioAuthToken) missing.push("TWILIO_AUTH_TOKEN");
+  if (!s.fromNumber) missing.push("TWILIO_FROM_NUMBER");
+  if (!s.toNumber) missing.push("ALERT_PHONE_NUMBER");
+  return missing;
 }
 
 /**
@@ -20,8 +33,13 @@ export async function sendSms(
   if (s.provider !== "twilio") {
     return { ok: false, info: `Unsupported SMS provider "${s.provider}".` };
   }
-  if (!s.twilioAccountSid || !s.twilioAuthToken || !s.fromNumber || !recipient) {
-    return { ok: false, info: "SMS not configured (missing Twilio settings or number)." };
+  const missing = smsMissing(config);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      info: `SMS not configured — missing: ${missing.join(", ")}.`,
+      missing,
+    };
   }
   try {
     const form = new URLSearchParams({

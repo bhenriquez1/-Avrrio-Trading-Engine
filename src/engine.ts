@@ -29,7 +29,7 @@ import { findSetup, withinAllowedHours } from "./setups/index.js";
 import { findSymbol, isTradable } from "./symbols/registry.js";
 import { TradeJournal } from "./journal/tradeJournal.js";
 import { TopstepClient } from "./topstep/client.js";
-import { sendSms, samePhone } from "./sms/smsClient.js";
+import { sendSms, samePhone, smsMissing } from "./sms/smsClient.js";
 import { parseSmsCommand, type SmsCommand } from "./sms/inbound.js";
 import {
   formatOpportunitySms,
@@ -103,7 +103,7 @@ export class AvrrioEngine {
       new EmailNotifier(config),
     ]);
     this.auth = new Auth(config);
-    this.scheduler = new Scheduler(this, config);
+    this.scheduler = new Scheduler(this, config, this.settings);
   }
 
   async init(): Promise<void> {
@@ -415,6 +415,20 @@ export class AvrrioEngine {
   async setLiveTrading(enabled: boolean, actor: string): Promise<void> {
     await this.settings.setLiveTrading(enabled);
     await this.audit.log("settings.live_trading", actor, { enabled });
+  }
+
+  /** Exact SMS env vars that are missing (empty when fully configured). */
+  smsMissing(): string[] {
+    return smsMissing(this.config);
+  }
+
+  async setScheduler(
+    enabled: boolean,
+    intervalMinutes: number | undefined,
+    actor: string,
+  ): Promise<void> {
+    await this.scheduler.configure(enabled, intervalMinutes);
+    await this.audit.log("settings.scheduler", actor, { enabled, intervalMinutes });
   }
 
   /**

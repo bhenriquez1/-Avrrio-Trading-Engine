@@ -79,6 +79,7 @@ async function start() {
           enabled: engine.notifications.enabled,
           channels: engine.notifications.activeChannels(),
           smsEnabled: engine.config.notifications.sms.enabled,
+          smsMissing: engine.smsMissing(),
         },
         approvalExpiryMinutes: engine.config.queue.approvalExpiryMinutes,
         scheduler: engine.scheduler.stats(),
@@ -216,6 +217,21 @@ async function start() {
       const text = engine.dailySummaryText(engine.scheduler.stats().scansToday);
       await engine.notifyText(text, "scheduler.daily_summary");
       res.json({ text });
+    }),
+  );
+  // Runtime enable/disable + interval for the 20-min scanner.
+  app.post(
+    "/api/scheduler/config",
+    guard,
+    wrap(async (req, res) => {
+      const { enabled, intervalMinutes } = req.body as {
+        enabled?: boolean;
+        intervalMinutes?: number;
+      };
+      if (typeof enabled === "boolean") {
+        await engine.setScheduler(enabled, intervalMinutes, "operator");
+      }
+      res.json(engine.scheduler.stats());
     }),
   );
 

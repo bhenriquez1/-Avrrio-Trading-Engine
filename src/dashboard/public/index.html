@@ -82,6 +82,11 @@
             <button class="btn-primary" id="cycleBtn" style="width:auto;padding:6px 14px" title="Scan, qualify (score≥85 & R/R≥2), and create + SMS the top 1–3 setups">Run scan cycle (alert worthy)</button>
             <span class="tag" id="schedTag"></span>
           </div>
+          <div class="kill" style="margin-bottom:10px">
+            <button class="btn-ghost" id="schedToggle" style="width:auto;padding:6px 12px">Enable scheduler</button>
+            <label class="tag" style="margin:0">Interval (min) <input id="schedInterval" type="number" value="20" style="width:70px;display:inline-block;padding:4px"></label>
+            <span class="tag" id="schedTimes"></span>
+          </div>
           <div id="scan"></div>
         </div>
 
@@ -179,7 +184,17 @@
         $("tradeModeBtn").textContent = `Trading: ${s.liveTrading ? "LIVE" : "paper"}`;
         $("tradeModeBtn").className = s.liveTrading ? "btn-danger" : "btn-ghost";
         $("tradeModeBtn").dataset.live = s.liveTrading ? "1" : "";
-        if (s.scheduler) $("schedTag").textContent = `scheduler ${s.scheduler.enabled ? "ON" : "off"} · scans today ${s.scheduler.scansToday}`;
+        if (s.scheduler) {
+          const sc = s.scheduler;
+          $("schedTag").textContent = `scheduler ${sc.enabled ? "ON" : "off"} · scans today ${sc.scansToday}`;
+          $("schedToggle").textContent = sc.enabled ? "Disable scheduler" : "Enable scheduler";
+          $("schedToggle").className = sc.enabled ? "btn-danger" : "btn-ok";
+          $("schedToggle").dataset.enabled = sc.enabled ? "1" : "";
+          if (document.activeElement !== $("schedInterval")) $("schedInterval").value = sc.intervalMinutes || 20;
+          $("schedTimes").textContent = `last scan ${sc.lastScanTime ? new Date(sc.lastScanTime).toLocaleTimeString() : "—"} · last alert ${sc.lastAlertTime ? new Date(sc.lastAlertTime).toLocaleTimeString() : "—"}`;
+        }
+        if (t.usingFallbackData) showError("TopstepX market data unavailable — scans are using SIMULATED data. Fix the connection (Auth test).");
+        if (s.notifications && s.notifications.smsMissing && s.notifications.smsMissing.length) showError("SMS not configured — missing: " + s.notifications.smsMissing.join(", "));
         $("account").innerHTML = `
           <div class="card"><h2>Account</h2><div>${a ? a.name : "—"}</div></div>
           <div class="card"><h2>Balance</h2><div class="big">${a ? "$"+a.balance.toLocaleString() : "—"}</div></div>
@@ -216,6 +231,8 @@
         const lines = [
           (r.ok ? "✅ " : "⚠️ ") + r.message,
           "",
+          "Stage: " + (r.stage || "n/a") + (r.httpStatus != null ? " (HTTP " + r.httpStatus + ")" : ""),
+          "Endpoint: " + (r.endpoint || "n/a"),
           "Auth method: " + (r.authMethod || "n/a"),
           r.missing && r.missing.length ? "Missing: " + r.missing.join(", ") : "Missing: none",
           "",
@@ -352,6 +369,12 @@
         $("symbol").value = sym; $("symbolPicker").value = sym; updateNote();
         document.getElementById("symbol").scrollIntoView({ behavior: "smooth", block: "center" });
       };
+      $("schedToggle").addEventListener("click", async () => {
+        const enable = $("schedToggle").dataset.enabled !== "1";
+        const intervalMinutes = Number($("schedInterval").value) || 20;
+        await api("/api/scheduler/config", { method: "POST", body: JSON.stringify({ enabled: enable, intervalMinutes }) }).then(j).catch((e) => showError("scheduler: " + e.message));
+        refresh();
+      });
       $("scanBtn").addEventListener("click", scan);
       $("cycleBtn").addEventListener("click", async () => {
         $("cycleBtn").textContent = "Running…";
