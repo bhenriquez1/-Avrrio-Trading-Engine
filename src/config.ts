@@ -51,6 +51,18 @@ export interface AvrrioConfig {
     /** Password required to log in to the dashboard / approve trades. */
     password: string;
   };
+  scheduler: {
+    /** Master switch for the 20-min scheduled scanner. Default false. */
+    enabled: boolean;
+    /** Scan cadence in minutes. */
+    intervalMinutes: number;
+    /** Minimum reward/risk to qualify for an alert. */
+    minRewardRisk: number;
+    /** Max number of alerts per cycle (keep it useful, not noise). */
+    maxAlerts: number;
+    /** Local hour (0-23) to send the daily summary; -1 disables. */
+    dailySummaryHour: number;
+  };
   /** Public base URL used to build approve/reject links in notifications. */
   publicBaseUrl: string;
   queue: {
@@ -171,6 +183,13 @@ export function loadConfig(): AvrrioConfig {
       // Render (and most PaaS) inject PORT; fall back to DASHBOARD_PORT locally.
       port: num("PORT", num("DASHBOARD_PORT", 4317)),
       password: env("DASHBOARD_PASSWORD"),
+    },
+    scheduler: {
+      enabled: bool("SCHEDULED_SCANNER_ENABLED", false),
+      intervalMinutes: num("SCAN_INTERVAL_MINUTES", 20),
+      minRewardRisk: num("AVRRIO_MIN_RR", 2),
+      maxAlerts: num("AVRRIO_MAX_ALERTS", 3),
+      dailySummaryHour: num("DAILY_SUMMARY_HOUR", -1),
     },
     publicBaseUrl: env("PUBLIC_BASE_URL", "http://localhost:4317"),
     queue: {
