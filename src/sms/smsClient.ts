@@ -7,9 +7,14 @@ export interface SmsSendResult {
   missing?: string[];
 }
 
-/** Returns the exact Twilio/SMS env vars that are missing. */
+/**
+ * Returns the exact Twilio/SMS env vars that are missing. Returns an empty
+ * list when SMS is intentionally disabled (SMS_ENABLED=false) — no Twilio
+ * vars are required in that case.
+ */
 export function smsMissing(config: AvrrioConfig): string[] {
   const s = config.notifications.sms;
+  if (!s.enabled) return [];
   const missing: string[] = [];
   if (!s.twilioAccountSid) missing.push("TWILIO_ACCOUNT_SID");
   if (!s.twilioAuthToken) missing.push("TWILIO_AUTH_TOKEN");
@@ -30,6 +35,9 @@ export async function sendSms(
 ): Promise<SmsSendResult> {
   const s = config.notifications.sms;
   const recipient = to ?? s.toNumber;
+  if (!s.enabled) {
+    return { ok: false, info: "SMS is disabled (SMS_ENABLED=false)." };
+  }
   if (s.provider !== "twilio") {
     return { ok: false, info: `Unsupported SMS provider "${s.provider}".` };
   }

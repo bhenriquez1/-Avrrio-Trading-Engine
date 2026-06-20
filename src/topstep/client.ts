@@ -68,6 +68,7 @@ export class TopstepClient {
       TOPSTEP_API_KEY: maskSecret(t.apiKey),
       TOPSTEP_PASSWORD: maskSecret(t.password),
       TOPSTEP_ACCOUNT_NAME: maskValue(t.accountName),
+      TOPSTEP_ACCOUNT_ID: maskValue(t.accountId),
     };
   }
 
@@ -131,10 +132,26 @@ export class TopstepClient {
       const data = parseJson(raw);
       const token = data.token ?? data.Token ?? data.accessToken;
       if (!token) {
-        const why =
-          data.errorMessage ??
-          data.message ??
-          (data.success === false ? "success=false" : "");
+        const why = data.errorMessage ?? data.message ?? "";
+        // ProjectX can return HTTP 200 with success=false and token=null — that
+        // is a rejected-credentials response, not an ambiguous missing-field
+        // case, so classify it as invalid_credentials with actionable guidance.
+        if (data.success === false) {
+          const msg =
+            `ProjectX rejected the live login (HTTP ${res.status}, success=false, token=null)` +
+            (why ? `: "${why}". ` : ". ") +
+            "Verify TOPSTEP_USERNAME, TOPSTEP_API_KEY, TOPSTEP_ACCOUNT_ID, and TOPSTEP_ACCOUNT_NAME match your LIVE TopstepX/ProjectX account exactly, TOPSTEP_API_BASE_URL is correct, and the API key is enabled for live use (set TOPSTEP_PASSWORD too if your account requires password-based confirmation). " +
+            `Response: ${sanitized || "(empty)"}`;
+          this.setState("invalid_credentials", msg);
+          return {
+            ok: false,
+            stage: "invalid_credentials",
+            missing: [],
+            httpStatus: res.status,
+            message: msg,
+            ...base,
+          };
+        }
         this.setState(
           "token_not_returned",
           `No token in loginKey response${why ? ` (${why})` : ""}.`,

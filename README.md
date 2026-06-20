@@ -90,7 +90,13 @@ configured chat id is authorized; every action is audited.
 - `POST /api/alerts/telegram/test`, `GET /api/telegram/debug`,
   `POST /api/telegram/set-webhook`, `POST /api/telegram/webhook` (Telegram → us).
 
-## SMS alerts & approve-by-reply (backup)
+## SMS alerts & approve-by-reply (backup, currently disabled)
+
+**SMS is disabled by default** (`SMS_ENABLED=false`) — Telegram is the only
+alert channel for now. With SMS disabled, the `TWILIO_*` vars are not
+required and the dashboard shows no "SMS not configured" warning. Set
+`SMS_ENABLED=true` and the Twilio vars below to re-enable it as a backup
+channel later.
 
 Built so you can act on a setup from your phone without opening the dashboard
 (`src/sms/`). When a recommendation is generated, Avrrio texts the full signal:
@@ -124,8 +130,10 @@ Telegram alerts/commands are a planned follow-up (Phase 2) — SMS first.
 
 ## TopstepX connection & auth troubleshooting
 
-**Connect your PRACTICE account first** (`TOPSTEP_MODE=practice`), keep
-`LIVE_TRADING_ENABLED=false`, verify SMS approval in paper mode, then flip to live.
+**Defaults to your LIVE TopstepX/ProjectX account** (`TOPSTEP_MODE=live`); set
+`TOPSTEP_MODE=practice` to use a practice account instead. Either way, keep
+`LIVE_TRADING_ENABLED=false` until ProjectX auth and the TopstepX account both
+show **connected** and you've tested Telegram approvals in paper mode.
 
 **Auth method:** TopstepX uses the ProjectX Gateway API — `POST /api/Auth/loginKey`
 with **username + API key** → a session token (Bearer). Password / account name
@@ -149,28 +157,42 @@ naming or wrong credentials. Diagnose without guessing:
   `TOPSTEP_Practice_Username` etc. are picked up — but use the canonical names:
 
   ```env
-  TOPSTEP_MODE=practice
-  TOPSTEP_USERNAME=your_practice_username
-  TOPSTEP_PASSWORD=your_practice_password
-  TOPSTEP_ACCOUNT_NAME=your_practice_account_name
+  TOPSTEP_MODE=live
+  TOPSTEP_USERNAME=your_username
+  TOPSTEP_PASSWORD=your_password_if_required
+  TOPSTEP_ACCOUNT_NAME=your_account_name
+  TOPSTEP_ACCOUNT_ID=your_account_id
   TOPSTEP_API_KEY=your_api_key
   TOPSTEP_API_BASE_URL=https://api.topstepx.com
   LIVE_TRADING_ENABLED=false
   ```
 
+  An HTTP 200 response with `success: false` and `token: null` is a **rejected
+  login**, not a missing field — the auth-test result classifies it as
+  `invalid_credentials` and tells you to re-check `TOPSTEP_USERNAME`,
+  `TOPSTEP_API_KEY`, `TOPSTEP_ACCOUNT_ID`, `TOPSTEP_ACCOUNT_NAME`, and
+  `TOPSTEP_API_BASE_URL` against your live account (and to set
+  `TOPSTEP_PASSWORD` if your account needs it).
+
 **Execution gating:** in **live** mode a trade executes only when TopstepX is
 `connected` + `authenticated` + `active` (otherwise approval is accepted but
-execution is blocked, with an SMS explaining why). **Paper** mode allows simulated
-fills so the workflow is testable.
+execution is blocked, with an alert explaining why). **Paper** mode allows
+simulated fills so the workflow is testable — and `LIVE_TRADING_ENABLED` stays
+`false` regardless of any Telegram approve/reject tap until you flip it
+manually, so nothing executes for real while you're verifying the connection.
 
 **Paper/Live toggle:** the dashboard header has a **Trading: paper/LIVE** button
 (persisted, defaults paper) so you can switch without a redeploy — confirmation
-required to go live, and live still passes every safety gate.
+required to go live, and live still passes every safety gate. The **Emergency
+Stop** kill switch blocks every approval path (dashboard, Telegram, SMS) the
+instant it's engaged.
 
 - `GET /api/topstepx/status`, `POST /api/topstepx/{connect,disconnect,sync,execute,auth-test}`
 - `POST /api/settings { "liveTrading": true|false }`
-- Dashboard TopstepX card: connection state + message, account, buying power, daily
-  P&L, max daily loss, open positions, last sync, Connect/Disconnect/Sync/Auth-test.
+- Dashboard TopstepX card shows two distinct indicators — **ProjectX auth**
+  (connected/failed) and **TopstepX account** (connected/failed) — plus Account
+  ID, Buying power, Daily P&L, Open positions, Last sync, and
+  Connect/Disconnect/Sync/Auth-test buttons.
 
 ## Stability
 
@@ -203,9 +225,9 @@ Every recommendation has an **expiration** (`NOTIFICATION_EXPIRY_MINUTES`, defau
 When a setup is found, Avrrio can alert you so you can approve, reject, or let it
 expire from your phone (`src/notifications/`):
 
-- **Telegram** (recommended first — fast, free): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+- **Telegram** (the only alert channel for now — fast, free): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_ENABLED=true`. The dashboard top bar shows `alerts: telegram` once it's the active channel.
 - **Email** (on by default; sends when configured): SendGrid `SENDGRID_API_KEY`, `NOTIFICATION_EMAIL_TO`.
-- **SMS** (add later): Twilio `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` / `BRIAN_PHONE_NUMBER`.
+- **SMS** (disabled — `SMS_ENABLED=false`): Twilio `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` / `ALERT_PHONE_NUMBER` are not required while disabled.
 
 Alerts include symbol, direction, entry, stop, target, risk, confidence, news
 status, expiration, and **tokenized approve/reject links** that work without a
