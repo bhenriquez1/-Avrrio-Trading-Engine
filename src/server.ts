@@ -52,10 +52,13 @@ async function start() {
 
   const guard = engine.auth.middleware;
 
-  // --- status & data (protected) ---------------------------------------
+  // --- status & data ----------------------------------------------------
+  // Exempt from the password gate: read-only/diagnostic endpoints that expose
+  // NO secrets and cannot change trading state or place orders. This keeps the
+  // dashboard's status panel and connection diagnostics working even before
+  // login / across restarts. State-changing routes below stay guarded.
   app.get(
     "/api/status",
-    guard,
     wrap(async (_req, res) => {
       // Resilient: a broker/network failure must not 502 the whole dashboard.
       let account = null;
@@ -203,10 +206,10 @@ async function start() {
       res.json(await engine.executeRecommendation(id ?? "", "operator"));
     }),
   );
-  // Explicit credential/auth diagnostic — never a bare 401.
+  // Explicit credential/auth diagnostic — never a bare 401. Exempt from the
+  // password gate: returns only MASKED credential presence, never secrets.
   app.post(
     "/api/topstepx/auth-test",
-    guard,
     wrap(async (_req, res) => res.json(await engine.topstepxAuthTest())),
   );
 
@@ -262,14 +265,14 @@ async function start() {
   );
 
   // --- Telegram (primary alert channel) -------------------------------
+  // Test + debug are exempt from the password gate: the test only messages the
+  // operator's own configured chat, and debug returns chat ids (no token/secret).
   app.post(
     "/api/alerts/telegram/test",
-    guard,
     wrap(async (_req, res) => res.json(await engine.telegramTest())),
   );
   app.get(
     "/api/telegram/debug",
-    guard,
     wrap(async (_req, res) => res.json(await engine.telegramDebug())),
   );
   app.post(
