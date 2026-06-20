@@ -13,7 +13,7 @@ import { MarketDataReader, type MarketSnapshot } from "./market/marketData.js";
 import { NewsReader } from "./news/newsReader.js";
 import { NotificationManager } from "./notifications/notifier.js";
 import { EmailNotifier } from "./notifications/emailNotifier.js";
-import { TelegramNotifier } from "./notifications/telegramNotifier.js";
+import { TelegramService } from "./telegram/telegramService.js";
 import { RiskManager, type RiskContext } from "./risk/riskManager.js";
 import { pointValue } from "./risk/rules.js";
 import { RuntimeSettings } from "./settings/runtimeSettings.js";
@@ -71,6 +71,7 @@ export class AvrrioEngine {
   readonly recommendations: RecommendationStore;
   readonly executor: OrderExecutor;
   readonly notifications: NotificationManager;
+  readonly telegram: TelegramService;
   readonly settings: RuntimeSettings;
   readonly scheduler: Scheduler;
   readonly auth: Auth;
@@ -96,12 +97,10 @@ export class AvrrioEngine {
       this.recommendations,
       this.audit,
     );
-    // SMS is handled by the dedicated, fully-formatted signal path (sendSignalSms),
-    // so it is not registered here to avoid duplicate texts.
-    this.notifications = new NotificationManager(config, [
-      new TelegramNotifier(config),
-      new EmailNotifier(config),
-    ]);
+    // SMS and Telegram have dedicated, fully-formatted alert paths, so only email
+    // is registered here (avoids duplicate notifications).
+    this.notifications = new NotificationManager(config, [new EmailNotifier(config)]);
+    this.telegram = new TelegramService(config);
     this.auth = new Auth(config);
     this.scheduler = new Scheduler(this, config, this.settings);
   }
@@ -226,18 +225,71 @@ export class AvrrioEngine {
       await this.executor.execute(rec, "system");
     } else if (rec.status === "pending") {
       // Manual/pre-approved: alert the operator so they can approve from a phone.
-      if (this.notifications.enabled) {
-        const results = await this.notifications.notify(rec);
-        await this.audit.log("notification.sent", "system", {
-          recommendationId: rec.id,
-          channels: results.map((r) => `${r.channel}:${r.ok ? "ok" : r.info}`),
-        });
-      }
-      // SMS signal with reply-to-approve instructions.
-      await this.sendSignalSms(rec);
+      await this.dispatchAlert(rec);
     }
 
     return rec;
+  }
+
+  /**
+   * Sends a trade alert across channels. Telegram is PRIMARY (one-tap APPROVE /
+   * REJECT / STOP ALL buttons); SMS is the backup (used when Telegram is off, or
+   * if the Telegram send fails). Email is informational when configured.
+   */
+  private async dispatchAlert(rec: Recommendation): Promise<void> {
+    if (this.notifications.enabled) {
+      const results = await this.notifications.notify(rec);
+      await this.audit.log("notification.sent", "system", {
+        recommendationId: rec.id,
+        channels: results.map((r) => `${r.channel}:${r.ok ? "ok" : r.info}`),
+      });
+    }
+    if (this.telegram.enabled) {
+      const r = await this.telegram.sendAlert(rec);
+      await this.audit.log("telegram.alert_sent", "system", {
+        ref: rec.ref,
+        ok: r.ok,
+        info: r.info,
+      });
+      if (!r.ok && this.config.notifications.sms.enabled) {
+        await this.sendSignalSms(rec); // Telegram failed → SMS backup
+      }
+    } else if (this.config.notifications.sms.enabled) {
+      await this.sendSignalSms(rec);
+    }
+  }
+
+  /**
+   * Applies an approval action (from a Telegram button or elsewhere) through the
+   * same safety gates as SMS approval. Returns the operator confirmation text.
+   */
+  async approvalAction(
+    action: "approve" | "reject" | "stopall",
+    ref: string,
+  ): Promise<string> {
+    if (action === "approve") return this.approveBySms(ref);
+    if (action === "reject") return this.rejectBySms(ref);
+    await this.engageKill("emergency stop (button)", "operator");
+    return "🛑 Emergency Stop activated. No trades can execute.";
+  }
+
+  // --- Telegram (primary alert channel) ---------------------------------
+  telegramTest() {
+    return this.telegram.sendTest();
+  }
+  telegramDebug() {
+    return this.telegram.debug();
+  }
+  telegramSetWebhook(url: string) {
+    return this.telegram.setWebhook(url);
+  }
+  /** Process an inbound Telegram webhook (button press). */
+  async handleTelegramWebhook(body: unknown): Promise<void> {
+    const cb = this.telegram.parseCallback(body);
+    if (!cb) return;
+    await this.telegram.handleCallback(cb, (action, ref) =>
+      this.approvalAction(action, ref),
+    );
   }
 
   /** Sends the 🚨 signal SMS with YES/NO reply instructions, and audits it. */

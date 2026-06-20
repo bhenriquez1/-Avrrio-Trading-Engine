@@ -80,6 +80,12 @@ async function start() {
           channels: engine.notifications.activeChannels(),
           smsEnabled: engine.config.notifications.sms.enabled,
           smsMissing: engine.smsMissing(),
+          telegramEnabled: engine.telegram.enabled,
+          primaryChannel: engine.telegram.enabled
+            ? "telegram"
+            : engine.config.notifications.sms.enabled
+              ? "sms"
+              : "none",
         },
         approvalExpiryMinutes: engine.config.queue.approvalExpiryMinutes,
         scheduler: engine.scheduler.stats(),
@@ -255,6 +261,34 @@ async function start() {
     wrap(async (_req, res) => res.json(await engine.sendTestSms())),
   );
 
+  // --- Telegram (primary alert channel) -------------------------------
+  app.post(
+    "/api/alerts/telegram/test",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.telegramTest())),
+  );
+  app.get(
+    "/api/telegram/debug",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.telegramDebug())),
+  );
+  app.post(
+    "/api/telegram/set-webhook",
+    guard,
+    wrap(async (_req, res) => {
+      const url = `${engine.config.publicBaseUrl.replace(/\/$/, "")}/api/telegram/webhook`;
+      res.json(await engine.telegramSetWebhook(url));
+    }),
+  );
+  // Telegram delivers button presses here. Authorized by chat id (not the password).
+  app.post(
+    "/api/telegram/webhook",
+    wrap(async (req, res) => {
+      await engine.handleTelegramWebhook(req.body);
+      res.json({ ok: true });
+    }),
+  );
+
   // Twilio posts here (From, Body). Authorized by phone number, not the password.
   app.post(
     "/api/alerts/sms/inbound",
@@ -323,6 +357,14 @@ async function start() {
     console.log(`Avrrio dashboard on http://localhost:${port}`);
     for (const w of engine.warnings()) console.warn(`⚠️  ${w}`);
     engine.scheduler.start(); // no-op unless SCHEDULED_SCANNER_ENABLED=true
+    // Best-effort: register the Telegram webhook so button presses are delivered.
+    if (engine.telegram.enabled && engine.config.publicBaseUrl.startsWith("https")) {
+      const url = `${engine.config.publicBaseUrl.replace(/\/$/, "")}/api/telegram/webhook`;
+      engine
+        .telegramSetWebhook(url)
+        .then((r) => console.log(`Telegram webhook: ${r.ok ? "set " + url : r.info}`))
+        .catch(() => {});
+    }
   });
 }
 
