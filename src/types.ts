@@ -8,6 +8,30 @@
 
 export type Side = "long" | "short";
 
+/**
+ * How the engine acts on a qualifying setup:
+ * - `advisor`            — AI never places orders; it only alerts. You enter
+ *                          manually in TopstepX. (Safest.)
+ * - `telegram_approval`  — AI alerts with one-tap APPROVE/REJECT; APPROVE
+ *                          submits the order (paper unless live is enabled).
+ * - `full_auto`          — AI auto-executes when every safety gate passes.
+ */
+export type TradingMode = "advisor" | "telegram_approval" | "full_auto";
+
+export const TRADING_MODES: TradingMode[] = [
+  "advisor",
+  "telegram_approval",
+  "full_auto",
+];
+
+/** Normalizes any string to a valid TradingMode (defaults to telegram_approval). */
+export function parseTradingMode(v: string | undefined): TradingMode {
+  const s = (v ?? "").trim().toLowerCase().replace(/[-\s]+/g, "_");
+  return (TRADING_MODES as string[]).includes(s)
+    ? (s as TradingMode)
+    : "telegram_approval";
+}
+
 export interface AccountSummary {
   id: string;
   name: string;

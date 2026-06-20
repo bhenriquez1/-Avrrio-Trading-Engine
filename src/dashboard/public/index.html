@@ -64,6 +64,11 @@
         <h1>Avrrio Trade AI</h1>
         <span class="tag" id="modeTag"></span>
         <span class="spacer"></span>
+        <select id="modeSelect" title="Trading mode" style="width:auto;padding:8px 10px;border-radius:8px">
+          <option value="advisor">Advisor (alerts only)</option>
+          <option value="telegram_approval">Telegram approval</option>
+          <option value="full_auto">Full auto</option>
+        </select>
         <button class="btn-ghost" id="tradeModeBtn" style="width:auto;padding:8px 16px">Enable live trading only after all checks pass</button>
         <button class="btn-danger" id="killBtn" style="width:auto;padding:8px 16px">🛑 Emergency Stop</button>
       </header>
@@ -185,8 +190,10 @@
         if (s.accountError) showError("Account data unavailable: " + s.accountError);
         const a = s.account;
         const t = s.topstepx || {};
+        const modeLabel = ({ advisor: "advisor", telegram_approval: "tg-approval", full_auto: "FULL-AUTO" })[s.tradingMode] || s.tradingMode || "manual";
         $("modeTag").textContent =
-          `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · ${s.semiAutonomous ? "semi-auto" : "manual"} · AI: ${s.providers.join("+") || "none"} · alerts: ${s.notifications ? s.notifications.primaryChannel : "off"}`;
+          `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · mode: ${modeLabel} · AI: ${s.providers.join("+") || "none"} · alerts: ${s.notifications ? s.notifications.primaryChannel : "off"}`;
+        if (s.tradingMode && document.activeElement !== $("modeSelect")) $("modeSelect").value = s.tradingMode;
         $("killBtn").textContent = s.killSwitch.engaged ? "✅ Clear Emergency Stop" : "🛑 Emergency Stop";
         $("killBtn").dataset.engaged = s.killSwitch.engaged ? "1" : "";
         $("tradeModeBtn").textContent = s.liveTrading ? "Trading: LIVE" : "Enable live trading only after all checks pass";
@@ -305,6 +312,12 @@
         if (goLive && !confirm("Enable live trading only after all checks pass? Approved trades may be sent for real.")) return;
         const r = await api("/api/settings", { method: "POST", body: JSON.stringify({ liveTrading: goLive }) }).then(j).catch((e) => ({ error: e.message }));
         if (r.error) showError("toggle: " + r.error);
+        refresh();
+      });
+      $("modeSelect").addEventListener("change", async () => {
+        const mode = $("modeSelect").value;
+        if (mode === "full_auto" && !confirm("Switch to FULL AUTO? Avrrio may auto-execute trades when every safety gate passes.")) { refresh(); return; }
+        await api("/api/mode", { method: "POST", body: JSON.stringify({ mode }) }).then(j).catch((e) => showError("mode: " + e.message));
         refresh();
       });
 

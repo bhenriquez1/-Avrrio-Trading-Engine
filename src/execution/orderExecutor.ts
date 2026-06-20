@@ -28,6 +28,15 @@ export class OrderExecutor {
    */
   async execute(rec: Recommendation, actor: string): Promise<OrderResult> {
     // Final, authoritative gates — re-evaluated at execution time.
+    // Advisor mode: the engine never places orders. This is the single,
+    // central choke point covering every path (manual, Telegram/SMS approve,
+    // pre-approved trigger, full-auto).
+    if (this.settings.getTradingMode() === "advisor") {
+      await this.block(rec, actor, "advisor mode — manual entry only");
+      throw new Error(
+        "Blocked: advisor mode is on — AI does not place orders. Enter manually in TopstepX.",
+      );
+    }
     if (!isTradable(rec.symbol)) {
       await this.block(rec, actor, "symbol not tradable (watchlist only)");
       throw new Error(`Blocked: ${rec.symbol} is watchlist-only, not tradable.`);

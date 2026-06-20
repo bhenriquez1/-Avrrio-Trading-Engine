@@ -42,6 +42,7 @@ import type {
   Side,
   TopstepStatus,
   TradeIdea,
+  TradingMode,
 } from "./types.js";
 
 export interface LiveTradingChecklist {
@@ -190,7 +191,7 @@ export class AvrrioEngine {
       consensus.confidence >= this.config.ai.confidenceThreshold;
 
     const autoEligible =
-      this.config.execution.semiAutonomousEnabled &&
+      this.settings.getTradingMode() === "full_auto" &&
       assessment.approved &&
       !this.killSwitch.isEngaged() &&
       !news.blocked &&
@@ -277,7 +278,13 @@ export class AvrrioEngine {
     action: "approve" | "reject" | "stopall" | "details",
     ref: string,
   ): Promise<string> {
-    if (action === "approve") return this.approveBySms(ref);
+    if (action === "approve") {
+      if (this.settings.getTradingMode() === "advisor") {
+        await this.audit.log("approve.advisor_only", "operator", { ref });
+        return `ℹ️ Advisor mode: Avrrio does not place orders. Enter ${ref} manually in TopstepX if you want it.`;
+      }
+      return this.approveBySms(ref);
+    }
     if (action === "reject") return this.rejectBySms(ref);
     if (action === "details") return this.telegramDetails(ref);
     await this.engageKill("emergency stop (button)", "operator");
@@ -529,6 +536,15 @@ export class AvrrioEngine {
     };
   }
 
+  // --- trading mode (advisor / telegram_approval / full_auto) -----------
+  getTradingMode(): TradingMode {
+    return this.settings.getTradingMode();
+  }
+  async setTradingMode(mode: TradingMode, actor: string): Promise<void> {
+    await this.settings.setTradingMode(mode);
+    await this.audit.log("settings.trading_mode", actor, { mode });
+  }
+
   /** Exact SMS env vars that are missing (empty when fully configured). */
   smsMissing(): string[] {
     return smsMissing(this.config);
@@ -574,6 +590,70 @@ export class AvrrioEngine {
     if (!this.config.notifications.sms.enabled) return;
     const r = await sendSms(this.config, text);
     await this.audit.log(type, "system", { ok: r.ok, info: r.info });
+  }
+
+  /**
+   * Broadcast a free-text message to the operator's alert channels. Telegram is
+   * primary; SMS is sent too when enabled. Used for scheduled day reports.
+   */
+  async broadcast(text: string, type = "report"): Promise<void> {
+    if (this.telegram.enabled) {
+      const r = await this.telegram.sendText(text);
+      await this.audit.log(`${type}.telegram`, "system", { ok: r.ok, info: r.info });
+    }
+    if (this.config.notifications.sms.enabled) {
+      const r = await sendSms(this.config, text);
+      await this.audit.log(`${type}.sms`, "system", { ok: r.ok, info: r.info });
+    }
+  }
+
+  /**
+   * Build + send a scheduled day report (morning / midday / closing) to the
+   * operator's channels. Read-only — never places or modifies trades.
+   */
+  async sendScheduledReport(
+    slot: "morning" | "midday" | "closing",
+    scans: number,
+  ): Promise<string> {
+    const text =
+      slot === "closing"
+        ? this.dailySummaryText(scans)
+        : await this.buildReport(slot, scans);
+    await this.broadcast(text, `report.${slot}`);
+    return text;
+  }
+
+  /** Morning/midday report: account snapshot + today's best opportunities. */
+  private async buildReport(
+    slot: "morning" | "midday",
+    scans: number,
+  ): Promise<string> {
+    const header =
+      slot === "morning" ? "☀️ AVRRIO MORNING REPORT" : "🌤️ AVRRIO MIDDAY REPORT";
+    let account: AccountSummary | null = null;
+    try {
+      account = await this.getAccount();
+    } catch {
+      /* report still useful without the account snapshot */
+    }
+    const top = (await this.scan({ limit: 12 }))
+      .filter((r) => r.tradable && (r.direction === "bullish" || r.direction === "bearish"))
+      .slice(0, 3);
+    const lines = [header, `Mode: ${this.getTradingMode()} · Trading: ${this.isLiveTradingEnabled() ? "LIVE" : "paper"}`];
+    if (account) {
+      lines.push(
+        `Account: ${account.name} · BP $${account.balance.toLocaleString()} · Day P&L ${account.dayPnl >= 0 ? "+" : ""}$${account.dayPnl.toLocaleString()}`,
+      );
+    }
+    lines.push(`Kill switch: ${this.killSwitch.isEngaged() ? "ENGAGED" : "clear"}`);
+    if (slot === "midday") lines.push(`Scans today: ${scans}`);
+    lines.push("", top.length ? "Top opportunities:" : "No tradable setups right now.");
+    for (const o of top) {
+      lines.push(
+        `• ${o.symbol} ${o.direction === "bullish" ? "LONG" : "SHORT"} — score ${o.score}/100`,
+      );
+    }
+    return lines.join("\n");
   }
 
   /** Build the end-of-day report from today's recommendations + journal. */
@@ -675,6 +755,10 @@ export class AvrrioEngine {
   private async approveBySms(ref: string): Promise<string> {
     const rec = this.recommendations.findByRef(ref);
     if (!rec) return `⚠️ Trade ${ref} not found.`;
+    if (this.settings.getTradingMode() === "advisor") {
+      await this.audit.log("approve.advisor_only", "phone", { ref });
+      return `ℹ️ Advisor mode: Avrrio does not place orders. Enter ${ref} manually in TopstepX if you want it.`;
+    }
     if (this.killSwitch.isEngaged()) {
       return `🛑 Emergency Stop active. Trade ${ref} cannot execute.`;
     }

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { AvrrioEngine, type ProposeInput } from "./engine.js";
 import { SYMBOLS, type AssetClass } from "./symbols/registry.js";
+import { parseTradingMode } from "./types.js";
 
 /**
  * Dashboard + API server.
@@ -73,7 +74,8 @@ async function start() {
         accountError,
         offline: engine.client.isOffline,
         liveTrading: engine.isLiveTradingEnabled(),
-        semiAutonomous: engine.config.execution.semiAutonomousEnabled,
+        tradingMode: engine.getTradingMode(),
+        semiAutonomous: engine.getTradingMode() === "full_auto",
         killSwitch: engine.killSwitch.status(),
         topstepx: engine.topstepxStatus(),
         liveTradingChecklist: await engine.liveTradingChecklist(false),
@@ -261,9 +263,35 @@ async function start() {
     }),
   );
 
+  // Live-trading readiness checklist (read-only).
   app.get(
     "/api/settings/live-checklist",
     wrap(async (_req, res) => res.json(await engine.liveTradingChecklist(false))),
+  );
+
+  // --- trading mode (advisor / telegram_approval / full_auto) ----------
+  app.post(
+    "/api/mode",
+    guard,
+    wrap(async (req, res) => {
+      const { mode } = req.body as { mode?: string };
+      if (mode) await engine.setTradingMode(parseTradingMode(mode), "operator");
+      res.json({ tradingMode: engine.getTradingMode() });
+    }),
+  );
+
+  // Manually fire a scheduled report (morning/midday/closing).
+  app.post(
+    "/api/scheduler/report",
+    guard,
+    wrap(async (req, res) => {
+      const { slot } = req.body as { slot?: "morning" | "midday" | "closing" };
+      const text = await engine.sendScheduledReport(
+        slot ?? "midday",
+        engine.scheduler.stats().scansToday,
+      );
+      res.json({ text });
+    }),
   );
 
   // --- SMS alerts (protected test) + inbound webhook (number-authorized) -
