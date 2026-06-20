@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import type { AvrrioConfig } from "../config.js";
 
@@ -10,7 +10,12 @@ import type { AvrrioConfig } from "../config.js";
  * generate) require a valid token. This protects the approval surface — nobody
  * can approve a live trade without the password.
  *
- * For a single-operator tool this in-memory scheme is appropriate. For
+ * Tokens are ALSO accepted statelessly: a token derived deterministically from
+ * the password validates even after a process restart (Render redeploys, free-
+ * tier sleeps). Without this, every restart silently invalidated the browser's
+ * stored token and the dashboard's own API calls began returning 401.
+ *
+ * For a single-operator tool this in-memory + derived scheme is appropriate. For
  * multi-user deployment, replace with real session storage + per-user accounts.
  */
 export class Auth {
@@ -22,6 +27,16 @@ export class Auth {
     return this.config.dashboard.password.length > 0;
   }
 
+  /**
+   * Stable token derived from the password. Survives restarts so a logged-in
+   * browser keeps working across redeploys. Not reversible to the password.
+   */
+  private derivedToken(): string {
+    return createHash("sha256")
+      .update(`avrrio:${this.config.dashboard.password}`)
+      .digest("hex");
+  }
+
   /** Validate the password and issue a token. Returns null on failure. */
   login(password: string): string | null {
     if (!this.required) {
@@ -31,9 +46,8 @@ export class Auth {
       return open;
     }
     if (!safeEqual(password, this.config.dashboard.password)) return null;
-    const token = randomBytes(24).toString("hex");
-    this.tokens.add(token);
-    return token;
+    // Return the stable derived token so the session survives restarts.
+    return this.derivedToken();
   }
 
   logout(token: string): void {
@@ -42,7 +56,9 @@ export class Auth {
 
   isValid(token: string | undefined): boolean {
     if (!this.required) return true; // open mode
-    return token !== undefined && this.tokens.has(token);
+    if (token === undefined) return false;
+    if (this.tokens.has(token)) return true;
+    return safeEqual(token, this.derivedToken());
   }
 
   /** Express middleware guarding protected routes. */
