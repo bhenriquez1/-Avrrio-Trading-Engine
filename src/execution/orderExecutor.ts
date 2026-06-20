@@ -1,6 +1,6 @@
 import type { AuditLog } from "../audit/auditLog.js";
-import type { AvrrioConfig } from "../config.js";
 import type { KillSwitch } from "../safety/killSwitch.js";
+import type { RuntimeSettings } from "../settings/runtimeSettings.js";
 import { isTradable } from "../symbols/registry.js";
 import type { TopstepClient } from "../topstep/client.js";
 import type { OrderResult } from "../types.js";
@@ -14,7 +14,7 @@ import type { Recommendation, RecommendationStore } from "./recommendations.js";
  */
 export class OrderExecutor {
   constructor(
-    private readonly config: AvrrioConfig,
+    private readonly settings: RuntimeSettings,
     private readonly client: TopstepClient,
     private readonly killSwitch: KillSwitch,
     private readonly store: RecommendationStore,
@@ -44,7 +44,7 @@ export class OrderExecutor {
       throw new Error("Recommendation already executed.");
     }
 
-    const live = this.config.execution.liveTradingEnabled;
+    const live = this.settings.isLiveTradingEnabled();
     const result = await this.client.submitOrder(
       {
         symbol: rec.symbol,

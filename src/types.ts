@@ -88,11 +88,24 @@ export interface RiskAssessment {
   violations: RuleViolation[];
 }
 
+/** Connection/diagnostic state surfaced to the dashboard. */
+export type TopstepConnectionState =
+  | "disconnected"
+  | "missing_credentials"
+  | "invalid_credentials"
+  | "token_not_returned"
+  | "connected"
+  | "demo";
+
 export interface TopstepStatus {
   connected: boolean;
   authenticated: boolean;
   /** True when running on demo data (no real credentials). */
   offline: boolean;
+  mode: "practice" | "live";
+  connectionState: TopstepConnectionState;
+  /** Last human-readable connection message (debug-safe, no secrets). */
+  message: string;
   accountId: string;
   accountStatus: "active" | "inactive" | "unknown";
   availableBuyingPower: number;
@@ -100,6 +113,25 @@ export interface TopstepStatus {
   maxDailyLoss: number;
   openPositions: number;
   lastSyncTime: string | null;
+}
+
+/** Result of an explicit credential/auth test (debug-safe — no secrets). */
+export interface AuthTestResult {
+  ok: boolean;
+  stage:
+    | "missing_credentials"
+    | "invalid_credentials"
+    | "token_not_returned"
+    | "connected"
+    | "demo";
+  /** Required env var names that are missing. */
+  missing: string[];
+  /** Masked presence of each relevant credential (e.g. "set (ab…yz)" / "missing"). */
+  present: Record<string, string>;
+  httpStatus: number | null;
+  /** The auth method this build uses. */
+  authMethod: string;
+  message: string;
 }
 
 export interface OrderRequest {

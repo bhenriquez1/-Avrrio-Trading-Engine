@@ -8,9 +8,13 @@ import "dotenv/config";
  */
 export interface AvrrioConfig {
   topstep: {
+    /** "practice" (paper account) or "live". Default practice. */
+    mode: "practice" | "live";
     baseUrl: string;
     username: string;
+    password: string;
     apiKey: string;
+    accountName: string;
   };
   ai: {
     anthropicApiKey: string;
@@ -100,12 +104,47 @@ function num(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Case-insensitive lookup across `process.env` over a list of candidate names.
+ * Tolerates the mixed-case / variant keys that creep into hosting dashboards
+ * (e.g. `TOPSTEP_Practice_Username`). Returns the first non-empty match.
+ */
+function envAny(names: string[], fallback = ""): string {
+  const lower: Record<string, string> = {};
+  for (const [k, val] of Object.entries(process.env)) {
+    if (val !== undefined) lower[k.toLowerCase()] = val;
+  }
+  for (const n of names) {
+    const v = lower[n.toLowerCase()];
+    if (v !== undefined && v !== "") return v;
+  }
+  return fallback;
+}
+
 export function loadConfig(): AvrrioConfig {
+  const mode =
+    env("TOPSTEP_MODE", "practice").toLowerCase() === "live"
+      ? "live"
+      : "practice";
   return {
     topstep: {
-      baseUrl: env("TOPSTEP_API_BASE_URL", "https://api.topstepx.com"),
-      username: env("TOPSTEP_USERNAME"),
-      apiKey: env("TOPSTEP_API_KEY"),
+      mode,
+      baseUrl: envAny(
+        ["TOPSTEP_API_BASE_URL", "TOPSTEP_BASE_URL"],
+        "https://api.topstepx.com",
+      ),
+      username: envAny([
+        "TOPSTEP_USERNAME",
+        "TOPSTEP_PRACTICE_USERNAME",
+        "TOPSTEP_USER",
+      ]),
+      password: envAny(["TOPSTEP_PASSWORD", "TOPSTEP_PRACTICE_PASSWORD"]),
+      apiKey: envAny(["TOPSTEP_API_KEY", "TOPSTEP_APIKEY", "PROJECTX_API_KEY"]),
+      accountName: envAny([
+        "TOPSTEP_ACCOUNT_NAME",
+        "TOPSTEP_ACCOUNTNAME",
+        "TOPSTEP_PRACTICE_ACCOUNT_NAME",
+      ]),
     },
     ai: {
       anthropicApiKey: env("ANTHROPIC_API_KEY"),
@@ -173,8 +212,11 @@ export function loadConfig(): AvrrioConfig {
 export function configWarnings(config: AvrrioConfig): string[] {
   const warnings: string[] = [];
   if (!config.topstep.apiKey || !config.topstep.username) {
+    const missing: string[] = [];
+    if (!config.topstep.username) missing.push("TOPSTEP_USERNAME");
+    if (!config.topstep.apiKey) missing.push("TOPSTEP_API_KEY");
     warnings.push(
-      "TopstepX credentials are not set — running in OFFLINE/demo mode (no live market, account, or order routing).",
+      `TopstepX not connectable — missing ${missing.join(", ")} (mode=${config.topstep.mode}). Running in OFFLINE/demo mode. Use POST /api/topstepx/auth-test for details.`,
     );
   }
   if (!config.ai.anthropicApiKey) {

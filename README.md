@@ -81,16 +81,49 @@ or — in live mode — TopstepX isn't connected.
 
 Telegram alerts/commands are a planned follow-up (Phase 2) — SMS first.
 
-## TopstepX connection
+## TopstepX connection & auth troubleshooting
 
-Execution is gated on broker readiness. In **live** mode a trade can only execute
-when TopstepX is `connected`, `authenticated`, and the account is `active`;
-otherwise approval is accepted but execution is blocked (with an SMS explaining
-why). In **paper** mode, simulated fills are allowed so the workflow is testable.
+**Connect your PRACTICE account first** (`TOPSTEP_MODE=practice`), keep
+`LIVE_TRADING_ENABLED=false`, verify SMS approval in paper mode, then flip to live.
 
-- `GET /api/topstepx/status`, `POST /api/topstepx/{connect,disconnect,sync,execute}`
-- Dashboard shows a TopstepX card (connected state, account, buying power, daily
-  P&L, max daily loss, open positions, last sync, Connect/Disconnect/Sync).
+**Auth method:** TopstepX uses the ProjectX Gateway API — `POST /api/Auth/loginKey`
+with **username + API key** → a session token (Bearer). Password / account name
+are accepted for account selection but loginKey only needs username + API key.
+
+**If you see HTTP 401 / "did not return a token":** it's almost always env-var
+naming or wrong credentials. Diagnose without guessing:
+
+- **Dashboard → "Auth test"** (or `POST /api/topstepx/auth-test`) reports the exact
+  stage — `missing_credentials` (and which), `invalid_credentials` (with HTTP
+  status), `token_not_returned`, or `connected` — plus a **masked** presence map
+  for each var (never logs secrets). Connect never returns a bare 401; it surfaces
+  the structured state.
+- **Env var names are normalized** (case-insensitive, with fallbacks), so
+  `TOPSTEP_Practice_Username` etc. are picked up — but use the canonical names:
+
+  ```env
+  TOPSTEP_MODE=practice
+  TOPSTEP_USERNAME=your_practice_username
+  TOPSTEP_PASSWORD=your_practice_password
+  TOPSTEP_ACCOUNT_NAME=your_practice_account_name
+  TOPSTEP_API_KEY=your_api_key
+  TOPSTEP_API_BASE_URL=https://api.topstepx.com
+  LIVE_TRADING_ENABLED=false
+  ```
+
+**Execution gating:** in **live** mode a trade executes only when TopstepX is
+`connected` + `authenticated` + `active` (otherwise approval is accepted but
+execution is blocked, with an SMS explaining why). **Paper** mode allows simulated
+fills so the workflow is testable.
+
+**Paper/Live toggle:** the dashboard header has a **Trading: paper/LIVE** button
+(persisted, defaults paper) so you can switch without a redeploy — confirmation
+required to go live, and live still passes every safety gate.
+
+- `GET /api/topstepx/status`, `POST /api/topstepx/{connect,disconnect,sync,execute,auth-test}`
+- `POST /api/settings { "liveTrading": true|false }`
+- Dashboard TopstepX card: connection state + message, account, buying power, daily
+  P&L, max daily loss, open positions, last sync, Connect/Disconnect/Sync/Auth-test.
 
 ## Stability
 
