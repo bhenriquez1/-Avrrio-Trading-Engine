@@ -2,12 +2,24 @@ import { randomUUID } from "node:crypto";
 import type { AvrrioConfig } from "../config.js";
 import type {
   AccountSummary,
+  AuthTestResult,
   Bar,
   OrderRequest,
   OrderResult,
   Quote,
+  TopstepConnectionState,
   TopstepStatus,
 } from "../types.js";
+
+/**
+ * The auth method this build uses. TopstepX exposes the ProjectX Gateway API,
+ * which authenticates with a **username + API key** via POST /api/Auth/loginKey
+ * and returns a session JWT used as a Bearer token. (Password / account name are
+ * NOT part of this flow — they're accepted in config for account selection and
+ * future password-based login, but loginKey only needs username + API key.)
+ */
+const AUTH_METHOD =
+  "ProjectX loginKey (username + API key -> session token)";
 
 /**
  * TopstepX / ProjectX API client.
@@ -29,9 +41,129 @@ export class TopstepClient {
   private authenticated = false;
   private lastSyncTime: string | null = null;
   private lastAccount: AccountSummary | null = null;
+  private connectionState: TopstepConnectionState = "disconnected";
+  private message = "Not connected.";
 
   constructor(private readonly config: AvrrioConfig) {
     this.offline = !config.topstep.apiKey || !config.topstep.username;
+  }
+
+  /** Required env vars for the loginKey flow that are currently missing. */
+  missingCredentials(): string[] {
+    const missing: string[] = [];
+    if (!this.config.topstep.username) missing.push("TOPSTEP_USERNAME");
+    if (!this.config.topstep.apiKey) missing.push("TOPSTEP_API_KEY");
+    return missing;
+  }
+
+  /** Debug-safe map of which credentials are present (values masked). */
+  private maskedPresence(): Record<string, string> {
+    const t = this.config.topstep;
+    return {
+      TOPSTEP_MODE: t.mode,
+      TOPSTEP_API_BASE_URL: t.baseUrl,
+      TOPSTEP_USERNAME: maskValue(t.username),
+      TOPSTEP_API_KEY: maskSecret(t.apiKey),
+      TOPSTEP_PASSWORD: maskSecret(t.password),
+      TOPSTEP_ACCOUNT_NAME: maskValue(t.accountName),
+    };
+  }
+
+  /**
+   * Explicit credential/auth test. Never throws and never returns a bare 401 —
+   * it reports exactly which stage failed and why. Safe to call from a route.
+   */
+  async authTest(): Promise<AuthTestResult> {
+    const present = this.maskedPresence();
+    const base = { present, authMethod: AUTH_METHOD };
+
+    if (this.offline) {
+      const missing = this.missingCredentials();
+      this.setState("missing_credentials", `Demo mode — missing: ${missing.join(", ")}`);
+      // Log debug-safe presence (no secret values).
+      console.warn("[topstepx] auth-test (demo):", present);
+      return {
+        ok: false,
+        stage: "missing_credentials",
+        missing,
+        httpStatus: null,
+        message: `Running in demo mode. Missing required env vars: ${missing.join(", ")}. Set them in your host environment and redeploy.`,
+        ...base,
+      };
+    }
+
+    console.warn("[topstepx] auth-test:", present); // masked, no secrets
+    try {
+      const res = await fetch(
+        `${this.config.topstep.baseUrl}/api/Auth/loginKey`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            userName: this.config.topstep.username,
+            apiKey: this.config.topstep.apiKey,
+          }),
+        },
+      );
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        this.setState(
+          "invalid_credentials",
+          `loginKey returned HTTP ${res.status}.`,
+        );
+        return {
+          ok: false,
+          stage: "invalid_credentials",
+          missing: [],
+          httpStatus: res.status,
+          message: `ProjectX loginKey returned HTTP ${res.status}. Check that TOPSTEP_USERNAME and TOPSTEP_API_KEY are correct, the API key is enabled for this account, and TOPSTEP_API_BASE_URL is right. ${safeDetail(detail)}`,
+          ...base,
+        };
+      }
+      const data = (await res.json()) as {
+        token?: string;
+        errorMessage?: string;
+        success?: boolean;
+      };
+      if (!data.token) {
+        this.setState("token_not_returned", "No token in loginKey response.");
+        return {
+          ok: false,
+          stage: "token_not_returned",
+          missing: [],
+          httpStatus: res.status,
+          message: `Authenticated request succeeded but no token was returned${data.errorMessage ? `: ${data.errorMessage}` : "."}`,
+          ...base,
+        };
+      }
+      this.token = data.token;
+      this.authenticated = true;
+      this.setState("connected", "Authenticated with ProjectX.");
+      return {
+        ok: true,
+        stage: "connected",
+        missing: [],
+        httpStatus: res.status,
+        message: "Authenticated with ProjectX successfully.",
+        ...base,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "network error";
+      this.setState("invalid_credentials", `Auth request failed: ${msg}`);
+      return {
+        ok: false,
+        stage: "invalid_credentials",
+        missing: [],
+        httpStatus: null,
+        message: `Could not reach ProjectX at ${this.config.topstep.baseUrl}: ${msg}`,
+        ...base,
+      };
+    }
+  }
+
+  private setState(state: TopstepConnectionState, message: string): void {
+    this.connectionState = state;
+    this.message = message;
   }
 
   get isOffline(): boolean {
@@ -49,16 +181,35 @@ export class TopstepClient {
    * exercised end to end.
    */
   async connect(): Promise<TopstepStatus> {
-    if (!this.offline) {
-      await this.authenticate();
+    if (this.offline) {
+      // Demo session so the workflow is testable without real credentials.
       this.lastAccount = await this.getAccount();
       this.authenticated = true;
-    } else {
-      this.lastAccount = await this.getAccount(); // demo account
-      this.authenticated = true;
+      this.connected = true;
+      this.lastSyncTime = new Date().toISOString();
+      this.setState("demo", "Connected to demo account (no credentials set).");
+      return this.status();
     }
-    this.connected = true;
-    this.lastSyncTime = new Date().toISOString();
+
+    const test = await this.authTest();
+    if (!test.ok) {
+      // Do NOT throw a bare 401 — surface the structured state to the dashboard.
+      this.connected = false;
+      this.authenticated = false;
+      return this.status();
+    }
+    try {
+      this.lastAccount = await this.getAccount();
+      this.connected = true;
+      this.lastSyncTime = new Date().toISOString();
+      this.setState("connected", "Connected and account loaded.");
+    } catch (err) {
+      this.connected = false;
+      this.setState(
+        "invalid_credentials",
+        `Authenticated but account load failed: ${err instanceof Error ? err.message : "error"}`,
+      );
+    }
     return this.status();
   }
 
@@ -66,6 +217,7 @@ export class TopstepClient {
     this.connected = false;
     this.authenticated = false;
     this.token = null;
+    this.setState("disconnected", "Disconnected.");
     return this.status();
   }
 
@@ -83,6 +235,9 @@ export class TopstepClient {
       connected: this.connected,
       authenticated: this.authenticated,
       offline: this.offline,
+      mode: this.config.topstep.mode,
+      connectionState: this.connectionState,
+      message: this.message,
       accountId: acct?.id ?? (this.offline ? "DEMO" : "unknown"),
       accountStatus: this.connected ? "active" : "inactive",
       availableBuyingPower: acct?.balance ?? 0,
@@ -91,27 +246,6 @@ export class TopstepClient {
       openPositions: 0,
       lastSyncTime: this.lastSyncTime,
     };
-  }
-
-  /**
-   * Authenticate against ProjectX and cache a session token.
-   * ProjectX uses a login-with-key flow; adjust the path/payload to match the
-   * exact gateway your account points at (see docs/setup.md).
-   */
-  async authenticate(): Promise<void> {
-    if (this.offline) return;
-    const res = await this.request("/api/Auth/loginKey", {
-      method: "POST",
-      body: JSON.stringify({
-        userName: this.config.topstep.username,
-        apiKey: this.config.topstep.apiKey,
-      }),
-    });
-    const data = (await res.json()) as { token?: string };
-    if (!data.token) {
-      throw new Error("ProjectX authentication did not return a token.");
-    }
-    this.token = data.token;
   }
 
   async getAccount(): Promise<AccountSummary> {
@@ -204,7 +338,9 @@ export class TopstepClient {
   // --- internals ---------------------------------------------------------
 
   private async ensureAuth(): Promise<void> {
-    if (!this.token) await this.authenticate();
+    if (this.token) return;
+    const test = await this.authTest();
+    if (!test.ok) throw new Error(test.message);
   }
 
   private async request(path: string, init: RequestInit): Promise<Response> {
@@ -225,6 +361,26 @@ export class TopstepClient {
     }
     return res;
   }
+}
+
+// --- debug-safe masking (never log raw secrets) ---------------------------
+
+/** Masks a secret: "set (ab…yz)" showing only first/last 2 chars, or "missing". */
+function maskSecret(v: string): string {
+  if (!v) return "missing";
+  if (v.length <= 4) return "set (****)";
+  return `set (${v.slice(0, 2)}…${v.slice(-2)})`;
+}
+
+/** Masks a non-secret identifier: shows it's set without revealing the value. */
+function maskValue(v: string): string {
+  return v ? "set" : "missing";
+}
+
+/** Trims and truncates a server error body for safe inclusion in messages. */
+function safeDetail(s: string): string {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t ? `Server said: ${t.slice(0, 160)}` : "";
 }
 
 // --- raw wire shapes (best-effort; confirm against ProjectX docs) ---------

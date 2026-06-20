@@ -64,6 +64,7 @@
         <h1>Avrrio Trade AI</h1>
         <span class="tag" id="modeTag"></span>
         <span class="spacer"></span>
+        <button class="btn-ghost" id="tradeModeBtn" style="width:auto;padding:8px 16px">Trading: paper</button>
         <button class="btn-danger" id="killBtn" style="width:auto;padding:8px 16px">🛑 Emergency Stop</button>
       </header>
       <main>
@@ -173,19 +174,23 @@
           `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · ${s.semiAutonomous ? "semi-auto" : "manual"} · AI: ${s.providers.join("+") || "none"} · alerts: ${s.notifications && s.notifications.smsEnabled ? "SMS" : (s.notifications && s.notifications.enabled ? s.notifications.channels.join("+") : "off")}`;
         $("killBtn").textContent = s.killSwitch.engaged ? "✅ Clear Emergency Stop" : "🛑 Emergency Stop";
         $("killBtn").dataset.engaged = s.killSwitch.engaged ? "1" : "";
+        $("tradeModeBtn").textContent = `Trading: ${s.liveTrading ? "LIVE" : "paper"}`;
+        $("tradeModeBtn").className = s.liveTrading ? "btn-danger" : "btn-ghost";
+        $("tradeModeBtn").dataset.live = s.liveTrading ? "1" : "";
         $("account").innerHTML = `
           <div class="card"><h2>Account</h2><div>${a ? a.name : "—"}</div></div>
           <div class="card"><h2>Balance</h2><div class="big">${a ? "$"+a.balance.toLocaleString() : "—"}</div></div>
           <div class="card"><h2>Day P&amp;L</h2><div class="big" style="color:${a && a.dayPnl < 0 ? "var(--block)" : "var(--ok)"}">${a ? "$"+a.dayPnl.toLocaleString() : "—"}</div></div>
           <div class="card"><h2>Max daily loss</h2><div class="big">$${(s.safety.dailyMaxLoss || (a ? a.rules.maxDailyLoss : 0)).toLocaleString()}</div></div>
           <div class="card">
-            <h2>TopstepX</h2>
-            <div class="big" style="color:${t.connected ? "var(--ok)" : "var(--block)"}">${t.connected ? "Connected" : "Not connected"}</div>
-            <div class="tag">Acct ${t.accountId || "—"} · ${t.accountStatus || "—"}</div>
-            <div class="tag">BP $${(t.availableBuyingPower||0).toLocaleString()} · Pos ${t.openPositions||0}</div>
+            <h2>TopstepX (${t.mode || "practice"})</h2>
+            <div class="big" style="color:${stateColor(t.connectionState)}">${stateLabel(t.connectionState)}</div>
+            <div class="tag">${t.message || ""}</div>
+            <div class="tag">Acct ${t.accountId || "—"} · ${t.accountStatus || "—"} · BP $${(t.availableBuyingPower||0).toLocaleString()} · Pos ${t.openPositions||0}</div>
             <div class="tag">${t.lastSyncTime ? "synced "+new Date(t.lastSyncTime).toLocaleTimeString() : "never synced"}</div>
-            <div class="actions" style="display:flex;gap:6px;margin-top:6px">
+            <div class="actions" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
               <button style="width:auto;padding:5px 10px" class="${t.connected ? "btn-danger" : "btn-ok"}" onclick="topstepx('${t.connected ? "disconnect" : "connect"}')">${t.connected ? "Disconnect" : "Connect"}</button>
+              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="authTest()">Auth test</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="topstepx('sync')">Sync</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="testSms()">Test SMS</button>
             </div>
@@ -203,6 +208,38 @@
         const r = await api("/api/alerts/sms/test", { method: "POST" }).then(j).catch((e) => ({ ok: false, info: e.message }));
         alert(r.ok ? "Test SMS sent." : "SMS not sent: " + (r.info || "error"));
       };
+      window.authTest = async () => {
+        const r = await api("/api/topstepx/auth-test", { method: "POST" }).then(j).catch((e) => ({ ok: false, message: e.message, present: {}, missing: [] }));
+        const lines = [
+          (r.ok ? "✅ " : "⚠️ ") + r.message,
+          "",
+          "Auth method: " + (r.authMethod || "n/a"),
+          r.missing && r.missing.length ? "Missing: " + r.missing.join(", ") : "Missing: none",
+          "",
+          "Env presence:",
+          ...Object.entries(r.present || {}).map(([k, v]) => `  ${k}: ${v}`),
+        ];
+        alert(lines.join("\n"));
+        refresh();
+      };
+      function stateLabel(st) {
+        return ({
+          connected: "Connected", demo: "Demo (no creds)",
+          missing_credentials: "Missing credentials", invalid_credentials: "Invalid credentials",
+          token_not_returned: "Token not returned", disconnected: "Not connected",
+        })[st] || "Not connected";
+      }
+      function stateColor(st) {
+        if (st === "connected" || st === "demo") return "var(--ok)";
+        if (st === "disconnected") return "var(--muted)";
+        return "var(--block)";
+      }
+      $("tradeModeBtn").addEventListener("click", async () => {
+        const goLive = $("tradeModeBtn").dataset.live !== "1";
+        if (goLive && !confirm("Switch to LIVE trading? Approved trades may be sent for real (still gated by all safety checks).")) return;
+        await api("/api/settings", { method: "POST", body: JSON.stringify({ liveTrading: goLive }) }).then(j).catch((e) => showError("toggle: " + e.message));
+        refresh();
+      });
 
       async function loadRecs() {
         const recs = await api("/api/recommendations").then(j);

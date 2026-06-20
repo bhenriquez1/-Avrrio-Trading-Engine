@@ -16,6 +16,7 @@ import { EmailNotifier } from "./notifications/emailNotifier.js";
 import { TelegramNotifier } from "./notifications/telegramNotifier.js";
 import { RiskManager, type RiskContext } from "./risk/riskManager.js";
 import { pointValue } from "./risk/rules.js";
+import { RuntimeSettings } from "./settings/runtimeSettings.js";
 import {
   Scanner,
   scoreSnapshot,
@@ -35,6 +36,7 @@ import {
 } from "./sms/messages.js";
 import type {
   AccountSummary,
+  AuthTestResult,
   OrderResult,
   Side,
   TopstepStatus,
@@ -68,11 +70,13 @@ export class AvrrioEngine {
   readonly recommendations: RecommendationStore;
   readonly executor: OrderExecutor;
   readonly notifications: NotificationManager;
+  readonly settings: RuntimeSettings;
   readonly auth: Auth;
 
   constructor(config = loadConfig()) {
     this.config = config;
     this.audit = new AuditLog();
+    this.settings = new RuntimeSettings(config);
     this.client = new TopstepClient(config);
     this.market = new MarketDataReader(this.client);
     this.risk = new RiskManager();
@@ -84,7 +88,7 @@ export class AvrrioEngine {
     this.killSwitch = new KillSwitch(config, this.audit);
     this.recommendations = new RecommendationStore();
     this.executor = new OrderExecutor(
-      config,
+      this.settings,
       this.client,
       this.killSwitch,
       this.recommendations,
@@ -104,6 +108,7 @@ export class AvrrioEngine {
       this.journal.load(),
       this.killSwitch.load(),
       this.recommendations.load(),
+      this.settings.load(),
     ]);
   }
 
@@ -396,6 +401,18 @@ export class AvrrioEngine {
   topstepxSync(): Promise<TopstepStatus> {
     return this.client.sync();
   }
+  topstepxAuthTest(): Promise<AuthTestResult> {
+    return this.client.authTest();
+  }
+
+  // --- runtime trading mode (paper/live) toggle -------------------------
+  isLiveTradingEnabled(): boolean {
+    return this.settings.isLiveTradingEnabled();
+  }
+  async setLiveTrading(enabled: boolean, actor: string): Promise<void> {
+    await this.settings.setLiveTrading(enabled);
+    await this.audit.log("settings.live_trading", actor, { enabled });
+  }
 
   /**
    * Execute a stored recommendation by id/ref, gated on TopstepX readiness.
@@ -409,7 +426,7 @@ export class AvrrioEngine {
   }
 
   private assertBrokerReady(): void {
-    if (!this.config.execution.liveTradingEnabled) return; // paper is fine
+    if (!this.settings.isLiveTradingEnabled()) return; // paper is fine
     const s = this.client.status();
     if (!s.connected || !s.authenticated || s.accountStatus !== "active") {
       throw new Error("TopstepX is not connected/authenticated.");
@@ -496,7 +513,7 @@ export class AvrrioEngine {
       return `⚠️ Trade ${ref} blocked: price moved too far from entry ${rec.entry} (now ${quote.last}).`;
     }
     // TopstepX readiness gate.
-    if (this.config.execution.liveTradingEnabled) {
+    if (this.settings.isLiveTradingEnabled()) {
       const s = this.client.status();
       if (!s.connected || !s.authenticated || s.accountStatus !== "active") {
         await this.audit.log("sms.approve_blocked", "phone", {

@@ -69,7 +69,7 @@ async function start() {
         account,
         accountError,
         offline: engine.client.isOffline,
-        liveTrading: engine.config.execution.liveTradingEnabled,
+        liveTrading: engine.isLiveTradingEnabled(),
         semiAutonomous: engine.config.execution.semiAutonomousEnabled,
         killSwitch: engine.killSwitch.status(),
         topstepx: engine.topstepxStatus(),
@@ -193,6 +193,25 @@ async function start() {
     wrap(async (req, res) => {
       const { id } = req.body as { id?: string };
       res.json(await engine.executeRecommendation(id ?? "", "operator"));
+    }),
+  );
+  // Explicit credential/auth diagnostic — never a bare 401.
+  app.post(
+    "/api/topstepx/auth-test",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.topstepxAuthTest())),
+  );
+
+  // --- runtime trading mode toggle (paper/live) ------------------------
+  app.post(
+    "/api/settings",
+    guard,
+    wrap(async (req, res) => {
+      const { liveTrading } = req.body as { liveTrading?: boolean };
+      if (typeof liveTrading === "boolean") {
+        await engine.setLiveTrading(liveTrading, "operator");
+      }
+      res.json({ liveTrading: engine.isLiveTradingEnabled() });
     }),
   );
 
