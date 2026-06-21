@@ -3,17 +3,33 @@ import { test } from "node:test";
 import { loadConfig } from "../src/config.js";
 import { TopstepClient } from "../src/topstep/client.js";
 
-test("env normalization picks up mixed-case / variant names", () => {
-  process.env.TOPSTEP_Practice_Username = "practice_user";
-  process.env.TOPSTEP_APIKEY = "key123";
-  process.env.TOPSTEP_MODE = "practice";
+test("Topstep config reads canonical env names only", () => {
+  process.env.TOPSTEP_USERNAME = "live_user";
+  process.env.TOPSTEP_PASSWORD = "pw";
+  process.env.TOPSTEP_API_KEY = "key123";
+  process.env.TOPSTEP_ACCOUNT_ID = "12345";
+  process.env.TOPSTEP_ACCOUNT_NAME = "Live Account";
+  process.env.TOPSTEP_API_BASE_URL = "https://example.test";
+  process.env.TOPSTEP_PRACTICE_USERNAME = "legacy_user";
+  process.env.TOPSTEP_APIKEY = "legacy_key";
+  process.env.TOPSTEP_MODE = "live";
   try {
     const config = loadConfig();
-    assert.equal(config.topstep.username, "practice_user");
+    assert.equal(config.topstep.username, "live_user");
+    assert.equal(config.topstep.password, "pw");
     assert.equal(config.topstep.apiKey, "key123");
-    assert.equal(config.topstep.mode, "practice");
+    assert.equal(config.topstep.accountId, "12345");
+    assert.equal(config.topstep.accountName, "Live Account");
+    assert.equal(config.topstep.baseUrl, "https://example.test");
+    assert.equal(config.topstep.mode, "live");
   } finally {
-    delete process.env.TOPSTEP_Practice_Username;
+    delete process.env.TOPSTEP_USERNAME;
+    delete process.env.TOPSTEP_PASSWORD;
+    delete process.env.TOPSTEP_API_KEY;
+    delete process.env.TOPSTEP_ACCOUNT_ID;
+    delete process.env.TOPSTEP_ACCOUNT_NAME;
+    delete process.env.TOPSTEP_API_BASE_URL;
+    delete process.env.TOPSTEP_PRACTICE_USERNAME;
     delete process.env.TOPSTEP_APIKEY;
     delete process.env.TOPSTEP_MODE;
   }
@@ -32,6 +48,9 @@ test("auth-test reports missing credentials in demo mode (no secrets leaked)", a
   assert.match(r.authMethod, /loginKey/);
   // present values are masked, not raw
   assert.equal(r.present.TOPSTEP_API_KEY, "missing");
+  assert.equal(r.tokenReceived, false);
+  assert.equal(r.accountFound, false);
+  assert.match(r.lastError, /TOPSTEP_USERNAME/);
 });
 
 test("masked presence never reveals a secret value", async () => {

@@ -142,23 +142,12 @@ export function loadConfig(): AvrrioConfig {
   return {
     topstep: {
       mode,
-      baseUrl: envAny(
-        ["TOPSTEP_API_BASE_URL", "TOPSTEP_BASE_URL"],
-        "https://api.topstepx.com",
-      ),
-      username: envAny([
-        "TOPSTEP_USERNAME",
-        "TOPSTEP_PRACTICE_USERNAME",
-        "TOPSTEP_USER",
-      ]),
-      password: envAny(["TOPSTEP_PASSWORD", "TOPSTEP_PRACTICE_PASSWORD"]),
-      apiKey: envAny(["TOPSTEP_API_KEY", "TOPSTEP_APIKEY", "PROJECTX_API_KEY"]),
-      accountName: envAny([
-        "TOPSTEP_ACCOUNT_NAME",
-        "TOPSTEP_ACCOUNTNAME",
-        "TOPSTEP_PRACTICE_ACCOUNT_NAME",
-      ]),
-      accountId: envAny(["TOPSTEP_ACCOUNT_ID", "TOPSTEP_ACCOUNTID"]),
+      baseUrl: env("TOPSTEP_API_BASE_URL", "https://api.topstepx.com"),
+      username: env("TOPSTEP_USERNAME"),
+      password: env("TOPSTEP_PASSWORD"),
+      apiKey: env("TOPSTEP_API_KEY"),
+      accountName: env("TOPSTEP_ACCOUNT_NAME"),
+      accountId: env("TOPSTEP_ACCOUNT_ID"),
     },
     ai: {
       anthropicApiKey: env("ANTHROPIC_API_KEY"),
@@ -250,7 +239,7 @@ export function legacyEnvWarnings(): string[] {
   for (const [old, canonical] of legacy) {
     if (present.has(old.toLowerCase())) {
       warnings.push(
-        `Legacy env var "${old}" is set — rename it to "${canonical}". The old name still works for now.`,
+        `Legacy env var "${old}" is set — rename it to "${canonical}". The old name is ignored by this build.`,
       );
     }
   }
