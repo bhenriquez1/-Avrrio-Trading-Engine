@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { parseTradingMode, type TradingMode } from "./types.js";
 
 /**
  * Central configuration, loaded once from the environment.
@@ -34,6 +35,12 @@ export interface AvrrioConfig {
     liveTradingEnabled: boolean;
     /** Allows auto-execution when ALL gates pass. Default false. */
     semiAutonomousEnabled: boolean;
+    /**
+     * How the engine acts on a setup: advisor (alert only, no orders),
+     * telegram_approval (one-tap approve to execute), or full_auto. Default
+     * telegram_approval — the safe assistant middle ground.
+     */
+    tradingMode: TradingMode;
   };
   safety: {
     /** Hard stop — when true, every trade is blocked. */
@@ -63,6 +70,8 @@ export interface AvrrioConfig {
     maxAlerts: number;
     /** Local hour (0-23) to send the daily summary; -1 disables. */
     dailySummaryHour: number;
+    /** Local hours (0-23) to send scheduled day reports (morning/midday/close). */
+    reportHours: number[];
   };
   /** Public base URL used to build approve/reject links in notifications. */
   publicBaseUrl: string;
@@ -108,6 +117,15 @@ function bool(name: string, fallback = false): boolean {
   const v = process.env[name];
   if (v === undefined) return fallback;
   return v === "true" || v === "1";
+}
+
+/** Parses a comma-separated list of hours (0-23) into a sorted unique array. */
+function parseHours(raw: string): number[] {
+  const hours = raw
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 23);
+  return [...new Set(hours)].sort((a, b) => a - b);
 }
 
 function num(name: string, fallback: number): number {
@@ -162,6 +180,14 @@ export function loadConfig(): AvrrioConfig {
     execution: {
       liveTradingEnabled: bool("LIVE_TRADING_ENABLED", false),
       semiAutonomousEnabled: bool("SEMI_AUTONOMOUS_ENABLED", false),
+      // TRADING_MODE wins; for back-compat, SEMI_AUTONOMOUS_ENABLED=true implies
+      // full_auto only when TRADING_MODE is not explicitly set.
+      tradingMode: parseTradingMode(
+        process.env.TRADING_MODE ??
+          (bool("SEMI_AUTONOMOUS_ENABLED", false)
+            ? "full_auto"
+            : "telegram_approval"),
+      ),
     },
     safety: {
       killSwitch: bool("KILL_SWITCH", false),
@@ -181,6 +207,7 @@ export function loadConfig(): AvrrioConfig {
       minRewardRisk: num("AVRRIO_MIN_RR", 2),
       maxAlerts: num("AVRRIO_MAX_ALERTS", 3),
       dailySummaryHour: num("DAILY_SUMMARY_HOUR", -1),
+      reportHours: parseHours(env("REPORT_HOURS", "8,12,16")),
     },
     publicBaseUrl: env("PUBLIC_BASE_URL", "http://localhost:4317"),
     queue: {
@@ -276,9 +303,13 @@ export function configWarnings(config: AvrrioConfig): string[] {
       "LIVE_TRADING_ENABLED is false — approvals are simulated (paper). No real orders are sent.",
     );
   }
-  if (config.execution.semiAutonomousEnabled) {
+  if (config.execution.tradingMode === "full_auto") {
     warnings.push(
-      "SEMI_AUTONOMOUS_ENABLED is true — the engine MAY auto-execute when every gate passes.",
+      "TRADING_MODE is full_auto — the engine MAY auto-execute when every gate passes.",
+    );
+  } else if (config.execution.tradingMode === "advisor") {
+    warnings.push(
+      "TRADING_MODE is advisor — alerts only; the engine will NOT place any orders (enter manually in TopstepX).",
     );
   }
   if (config.safety.killSwitch) {

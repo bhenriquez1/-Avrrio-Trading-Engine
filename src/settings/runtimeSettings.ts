@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AvrrioConfig } from "../config.js";
+import { parseTradingMode, type TradingMode } from "../types.js";
 
 /**
  * Runtime-toggleable settings (persisted), so the operator can flip
@@ -11,6 +12,7 @@ export class RuntimeSettings {
   private liveTrading: boolean;
   private schedulerEnabled: boolean;
   private schedulerIntervalMinutes: number;
+  private tradingMode: TradingMode;
 
   constructor(
     config: AvrrioConfig,
@@ -19,6 +21,7 @@ export class RuntimeSettings {
     this.liveTrading = config.execution.liveTradingEnabled;
     this.schedulerEnabled = config.scheduler.enabled;
     this.schedulerIntervalMinutes = config.scheduler.intervalMinutes;
+    this.tradingMode = config.execution.tradingMode;
   }
 
   async load(): Promise<void> {
@@ -28,15 +31,26 @@ export class RuntimeSettings {
         liveTrading?: boolean;
         schedulerEnabled?: boolean;
         schedulerIntervalMinutes?: number;
+        tradingMode?: string;
       };
       if (typeof data.liveTrading === "boolean") this.liveTrading = data.liveTrading;
       if (typeof data.schedulerEnabled === "boolean")
         this.schedulerEnabled = data.schedulerEnabled;
       if (typeof data.schedulerIntervalMinutes === "number" && data.schedulerIntervalMinutes > 0)
         this.schedulerIntervalMinutes = data.schedulerIntervalMinutes;
+      if (typeof data.tradingMode === "string")
+        this.tradingMode = parseTradingMode(data.tradingMode);
     } catch {
       /* keep env defaults */
     }
+  }
+
+  getTradingMode(): TradingMode {
+    return this.tradingMode;
+  }
+  async setTradingMode(mode: TradingMode): Promise<void> {
+    this.tradingMode = mode;
+    await this.persist();
   }
 
   isLiveTradingEnabled(): boolean {
@@ -69,6 +83,7 @@ export class RuntimeSettings {
           liveTrading: this.liveTrading,
           schedulerEnabled: this.schedulerEnabled,
           schedulerIntervalMinutes: this.schedulerIntervalMinutes,
+          tradingMode: this.tradingMode,
         },
         null,
         2,

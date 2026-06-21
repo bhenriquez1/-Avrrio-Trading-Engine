@@ -32,6 +32,8 @@ export class Scheduler {
   private summaryDay = ""; // YYYY-MM-DD the summary was last sent
   private lastScanTime: string | null = null;
   private lastAlertTime: string | null = null;
+  /** Keys "YYYY-MM-DD:HH" already reported, so each slot fires once per day. */
+  private readonly reportsSent = new Set<string>();
   private readonly minScore: number;
 
   constructor(
@@ -76,9 +78,29 @@ export class Scheduler {
   private async tick(): Promise<void> {
     try {
       await this.runScanCycle();
+      await this.maybeReports();
       await this.maybeDailySummary();
     } catch (err) {
       console.error("scheduler tick error:", err);
+    }
+  }
+
+  /**
+   * Send the morning / midday / closing reports once each, when the local clock
+   * reaches a configured REPORT_HOURS hour. Read-only — never places trades.
+   */
+  private async maybeReports(): Promise<void> {
+    const now = new Date();
+    const day = now.toISOString().slice(0, 10);
+    const hour = now.getHours();
+    for (const h of this.config.scheduler.reportHours) {
+      if (hour !== h) continue;
+      const key = `${day}:${h}`;
+      if (this.reportsSent.has(key)) continue;
+      this.reportsSent.add(key);
+      const slot = reportSlot(h);
+      await this.engine.sendScheduledReport(slot, this.scansToday);
+      await this.engine.audit.log("scheduler.report", "system", { slot, hour: h });
     }
   }
 
@@ -170,4 +192,11 @@ export class Scheduler {
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** Maps a report hour to a slot: before 11 = morning, 11–14 = midday, else closing. */
+function reportSlot(hour: number): "morning" | "midday" | "closing" {
+  if (hour < 11) return "morning";
+  if (hour < 15) return "midday";
+  return "closing";
 }

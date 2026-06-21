@@ -68,6 +68,32 @@ Avrrio Score ≥ AVRRIO_ALERT_SCORE (default 85)   AND   reward/risk ≥ AVRRIO_
   **Run scan cycle** button; CLI: `scan-cycle`, `summary`. API: `POST /api/scheduler/run`,
   `POST /api/scheduler/config { enabled, intervalMinutes }`, `POST /api/scheduler/summary`.
 
+## Trading modes (advisor / telegram-approval / full-auto)
+
+Pick how much the engine is allowed to do — switchable at runtime from the
+dashboard header dropdown (persisted, no redeploy), or via `TRADING_MODE`:
+
+| Mode | What happens on a qualifying setup |
+|------|-------------------------------------|
+| **`advisor`** | Alerts only. **AI never places an order** — you enter it manually in TopstepX. APPROVE just acknowledges. (Safest.) |
+| **`telegram_approval`** (default) | Alert with one-tap **APPROVE / REJECT**. APPROVE submits the order (paper unless `LIVE_TRADING_ENABLED=true`), after every safety gate. |
+| **`full_auto`** | Auto-executes when **every** gate passes (setup + risk + news + 2/3 consensus + confidence). |
+
+Advisor mode is enforced at the single execution choke point (`OrderExecutor`),
+so it blocks **every** path — dashboard, Telegram, SMS, pre-approved trigger, and
+auto. `TRADING_MODE` wins; for back-compat, `SEMI_AUTONOMOUS_ENABLED=true` implies
+`full_auto` only when `TRADING_MODE` is unset. API: `POST /api/mode { mode }`.
+
+## Scheduled day reports
+
+When the scanner is on, Avrrio sends **morning / midday / closing** reports to
+Telegram at the `REPORT_HOURS` you set (default `8,12,16`). Morning & midday
+include the account snapshot (balance, buying power, day P&L), kill-switch state,
+current mode, and the top tradable opportunities; the closing report is the
+end-of-day summary (scans, signals, approved/rejected, win rate, P&L). Reports are
+**read-only** — they never place or modify trades. Fire one on demand with
+`POST /api/scheduler/report { slot: "morning" | "midday" | "closing" }`.
+
 ## Telegram alerts (primary channel)
 
 Telegram is the **primary** alert channel — full trade detail with one-tap
@@ -215,7 +241,10 @@ Designed for someone who can't watch the screen 9–5:
   maintenance loop executes it only when **the entry is reached AND** risk limits
   pass, no high-impact news, and the kill switch is clear — before it expires.
 - **Mode 3 — Semi-autonomous:** auto-executes when every gate passes
-  (`SEMI_AUTONOMOUS_ENABLED=true`).
+  (`TRADING_MODE=full_auto`).
+
+(These approval styles operate within the `telegram_approval` / `full_auto`
+trading modes above; `advisor` mode never executes regardless.)
 
 Every recommendation has an **expiration** (`NOTIFICATION_EXPIRY_MINUTES`, default
 5): if not approved in time it auto-cancels, preventing stale trades.
