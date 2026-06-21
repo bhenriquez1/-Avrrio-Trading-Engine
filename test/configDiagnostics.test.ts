@@ -41,7 +41,7 @@ test("legacyEnvWarnings flags deprecated names and maps to canonical", () => {
   process.env.BRIAN_PHONE_NUMBER = "+15551234567";
   try {
     const warns = legacyEnvWarnings();
-    assert.ok(warns.some((w) => w.includes("TOPSTEP_APIKEY") && w.includes("TOPSTEP_API_KEY")));
+    assert.ok(warns.some((w) => w.includes("TOPSTEP_APIKEY") && w.includes("TOPSTEP_API_KEY") && w.includes("ignored")));
     assert.ok(warns.some((w) => w.includes("BRIAN_PHONE_NUMBER") && w.includes("ALERT_PHONE_NUMBER")));
   } finally {
     delete process.env.TOPSTEP_APIKEY;

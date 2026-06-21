@@ -136,6 +136,16 @@ export interface AuthTestResult {
   /** The exact endpoint that was called. */
   endpoint: string;
   message: string;
+  /** Whether loginKey returned a token. */
+  tokenReceived: boolean;
+  /** Whether a TopstepX account was found after auth. */
+  accountFound: boolean;
+  /** Matched account id when available (safe identifier). */
+  accountId: string;
+  /** Matched account name when available (safe identifier). */
+  accountName: string;
+  /** Last debug-safe error or sanitized ProjectX response. */
+  lastError: string;
 }
 
 export interface OrderRequest {

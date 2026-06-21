@@ -79,6 +79,7 @@ export class TopstepClient {
   async authTest(): Promise<AuthTestResult> {
     const present = this.maskedPresence();
     const endpoint = `${this.config.topstep.baseUrl}/api/Auth/loginKey`;
+    const extras = { tokenReceived: false, accountFound: false, accountId: "", accountName: "", lastError: "" };
     const base = { present, authMethod: AUTH_METHOD, endpoint };
 
     if (this.offline) {
@@ -92,6 +93,8 @@ export class TopstepClient {
         missing,
         httpStatus: null,
         message: `Running in demo mode. Missing required env vars: ${missing.join(", ")}. Set them in your host environment and redeploy.`,
+        ...extras,
+        lastError: `Missing: ${missing.join(", ")}`,
         ...base,
       };
     }
@@ -124,7 +127,9 @@ export class TopstepClient {
           stage: "invalid_credentials",
           missing: [],
           httpStatus: res.status,
-          message: `ProjectX loginKey returned HTTP ${res.status}. Check that TOPSTEP_USERNAME and TOPSTEP_API_KEY are correct, the API key is enabled for this account, and TOPSTEP_API_BASE_URL is right. ${sanitized ? "Server said: " + sanitized : ""}`,
+          message: `ProjectX loginKey returned HTTP ${res.status}. Check TOPSTEP_USERNAME, TOPSTEP_API_KEY, and TOPSTEP_API_BASE_URL. ${sanitized ? "Server said: " + sanitized : ""}`,
+          ...extras,
+          lastError: sanitized || `HTTP ${res.status}`,
           ...base,
         };
       }
@@ -149,6 +154,8 @@ export class TopstepClient {
             missing: [],
             httpStatus: res.status,
             message: msg,
+            ...extras,
+            lastError: sanitized || "ProjectX returned success=false with token=null",
             ...base,
           };
         }
@@ -167,19 +174,53 @@ export class TopstepClient {
               ? `ProjectX said: "${why}". This usually means the API key is invalid/disabled or the wrong field was supplied. `
               : "") +
             `Response: ${sanitized || "(empty)"}`,
+          ...extras,
+          lastError: sanitized || "Token missing from response",
           ...base,
         };
       }
 
       this.token = String(token);
       this.authenticated = true;
-      this.setState("connected", "Authenticated with ProjectX.");
+
+      let account: AccountSummary | null = null;
+      let accountError = "";
+      try {
+        account = await this.getAccount();
+        this.lastAccount = account;
+      } catch (err) {
+        accountError = err instanceof Error ? err.message : "Account lookup failed";
+      }
+
+      if (!account) {
+        this.setState("connected", `ProjectX auth passed, but no account was found: ${accountError}`);
+        return {
+          ok: false,
+          stage: "connected",
+          missing: [],
+          httpStatus: res.status,
+          message: `ProjectX auth passed and token was received, but no TopstepX account was found. Verify TOPSTEP_ACCOUNT_ID and TOPSTEP_ACCOUNT_NAME. ${accountError}`,
+          tokenReceived: true,
+          accountFound: false,
+          accountId: "",
+          accountName: "",
+          lastError: accountError,
+          ...base,
+        };
+      }
+
+      this.setState("connected", "Authenticated with ProjectX and account found.");
       return {
         ok: true,
         stage: "connected",
         missing: [],
         httpStatus: res.status,
-        message: "Authenticated with ProjectX successfully.",
+        message: "Authenticated with ProjectX successfully and TopstepX account found.",
+        tokenReceived: true,
+        accountFound: true,
+        accountId: account.id,
+        accountName: account.name,
+        lastError: "",
         ...base,
       };
     } catch (err) {
@@ -191,6 +232,8 @@ export class TopstepClient {
         missing: [],
         httpStatus: null,
         message: `Could not reach ProjectX at ${endpoint}: ${msg}`,
+        ...extras,
+        lastError: msg,
         ...base,
       };
     }
@@ -303,8 +346,9 @@ export class TopstepClient {
       body: JSON.stringify({ onlyActiveAccounts: true }),
     });
     const data = (await res.json()) as { accounts?: RawAccount[] };
-    const raw = data.accounts?.[0];
-    if (!raw) throw new Error("No active TopstepX account found.");
+    const accounts = data.accounts ?? [];
+    const raw = selectAccount(accounts, this.config.topstep.accountId, this.config.topstep.accountName);
+    if (!raw) throw new Error(accountNotFoundMessage(accounts.length, this.config.topstep.accountId, this.config.topstep.accountName));
     return mapAccount(raw);
   }
 
@@ -490,6 +534,25 @@ interface RawBar {
   l: number;
   c: number;
   v: number;
+}
+
+function selectAccount(accounts: RawAccount[], accountId: string, accountName: string): RawAccount | undefined {
+  if (accountId) {
+    const byId = accounts.find((a) => String(a.id) === accountId);
+    if (byId) return byId;
+  }
+  if (accountName) {
+    const wanted = accountName.trim().toLowerCase();
+    const byName = accounts.find((a) => (a.name ?? "").trim().toLowerCase() === wanted);
+    if (byName) return byName;
+  }
+  return accounts[0];
+}
+
+function accountNotFoundMessage(count: number, accountId: string, accountName: string): string {
+  if (count === 0) return "No active TopstepX account found.";
+  const filters = [accountId ? `TOPSTEP_ACCOUNT_ID=${accountId}` : "", accountName ? "TOPSTEP_ACCOUNT_NAME is set" : ""].filter(Boolean).join(" and ");
+  return filters ? `Found ${count} account(s), but none matched ${filters}.` : `Found ${count} account(s), but could not select an account.`;
 }
 
 function mapAccount(raw: RawAccount): AccountSummary {

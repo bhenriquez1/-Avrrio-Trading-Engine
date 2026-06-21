@@ -76,6 +76,7 @@ async function start() {
         semiAutonomous: engine.config.execution.semiAutonomousEnabled,
         killSwitch: engine.killSwitch.status(),
         topstepx: engine.topstepxStatus(),
+        liveTradingChecklist: await engine.liveTradingChecklist(false),
         providers: engine.consensus.availableProviders(),
         newsEnabled: engine.news.enabled,
         notifications: {
@@ -184,7 +185,7 @@ async function start() {
   );
 
   // --- TopstepX connection (protected) ---------------------------------
-  app.get("/api/topstepx/status", guard, (_req, res) => res.json(engine.topstepxStatus()));
+  app.get("/api/topstepx/status", (_req, res) => res.json(engine.topstepxStatus()));
   app.post(
     "/api/topstepx/connect",
     guard,
@@ -253,8 +254,16 @@ async function start() {
       if (typeof liveTrading === "boolean") {
         await engine.setLiveTrading(liveTrading, "operator");
       }
-      res.json({ liveTrading: engine.isLiveTradingEnabled() });
+      res.json({
+        liveTrading: engine.isLiveTradingEnabled(),
+        liveTradingChecklist: await engine.liveTradingChecklist(false),
+      });
     }),
+  );
+
+  app.get(
+    "/api/settings/live-checklist",
+    wrap(async (_req, res) => res.json(await engine.liveTradingChecklist(false))),
   );
 
   // --- SMS alerts (protected test) + inbound webhook (number-authorized) -

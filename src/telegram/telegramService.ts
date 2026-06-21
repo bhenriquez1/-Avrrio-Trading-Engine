@@ -15,6 +15,7 @@ import {
 const APPROVE = "a";
 const REJECT = "r";
 const STOPALL = "x";
+const DETAILS = "d";
 
 export interface TelegramCallback {
   callbackQueryId: string;
@@ -25,14 +26,14 @@ export interface TelegramCallback {
 
 /** Action applied for a tapped button, returning the operator confirmation text. */
 export type ApprovalActor = (
-  action: "approve" | "reject" | "stopall",
+  action: "approve" | "reject" | "stopall" | "details",
   ref: string,
 ) => Promise<string>;
 
 /**
  * Telegram alert service — the primary alert channel. Sends rich, one-tap
- * APPROVE / REJECT / STOP ALL alerts and processes button presses (authorized by
- * chat id). SMS remains the backup channel.
+ * APPROVE / REJECT / DETAILS / EMERGENCY STOP alerts and processes button
+ * presses (authorized by chat id). SMS is not used as a fallback.
  */
 export class TelegramService {
   constructor(private readonly config: AvrrioConfig) {}
@@ -57,7 +58,8 @@ export class TelegramService {
         { text: "✅ APPROVE", callback_data: `${APPROVE}|${rec.ref}` },
         { text: "❌ REJECT", callback_data: `${REJECT}|${rec.ref}` },
       ],
-      [{ text: "🛑 STOP ALL", callback_data: STOPALL }],
+      [{ text: "📋 DETAILS", callback_data: `${DETAILS}|${rec.ref}` }],
+      [{ text: "🛑 EMERGENCY STOP", callback_data: STOPALL }],
     ];
     return tgSendMessage(this.token, this.chatId, formatAlert(rec), buttons);
   }
@@ -143,11 +145,14 @@ export class TelegramService {
     let text: string;
     if (code === APPROVE) text = await actor("approve", ref);
     else if (code === REJECT) text = await actor("reject", ref);
+    else if (code === DETAILS) text = await actor("details", ref);
     else if (code === STOPALL) text = await actor("stopall", "");
     else text = "Unknown action.";
 
     await tgAnswerCallback(this.token, cb.callbackQueryId, text);
-    await tgEditReplyMarkup(this.token, cb.chatId, cb.messageId); // disable buttons
+    if (code !== DETAILS) {
+      await tgEditReplyMarkup(this.token, cb.chatId, cb.messageId); // disable buttons after final actions
+    }
     await tgSendMessage(this.token, this.chatId, text);
     return text;
   }

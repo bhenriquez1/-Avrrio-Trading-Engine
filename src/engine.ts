@@ -44,6 +44,19 @@ import type {
   TradeIdea,
 } from "./types.js";
 
+export interface LiveTradingChecklist {
+  projectxAuth: boolean;
+  tokenReceived: boolean;
+  accountFound: boolean;
+  telegramTestPassed: boolean;
+  emergencyStopTested: boolean;
+  maxDailyLossConfigured: boolean;
+  maxPositionSizeConfigured: boolean;
+  paperApprovalTestPassed: boolean;
+  ready: boolean;
+  blockers: string[];
+}
+
 export interface ProposeInput extends TradeIdea {
   /** Optional predefined setup this idea belongs to. */
   setupName?: string;
@@ -75,6 +88,10 @@ export class AvrrioEngine {
   readonly settings: RuntimeSettings;
   readonly scheduler: Scheduler;
   readonly auth: Auth;
+  private telegramTestPassed = false;
+  private emergencyStopTested = false;
+  private paperApprovalTestPassed = false;
+  private lastAuthTest: AuthTestResult | null = null;
 
   constructor(config = loadConfig()) {
     this.config = config;
@@ -232,31 +249,24 @@ export class AvrrioEngine {
   }
 
   /**
-   * Sends a trade alert across channels. Telegram is PRIMARY (one-tap APPROVE /
-   * REJECT / STOP ALL buttons); SMS is the backup (used when Telegram is off, or
-   * if the Telegram send fails). Email is informational when configured.
+   * Sends a trade alert to Telegram only. Telegram carries the full trade detail
+   * plus one-tap APPROVE / REJECT / STOP ALL buttons. SMS remains disabled unless
+   * an operator explicitly re-enables SMS endpoints for legacy use.
    */
   private async dispatchAlert(rec: Recommendation): Promise<void> {
-    if (this.notifications.enabled) {
-      const results = await this.notifications.notify(rec);
-      await this.audit.log("notification.sent", "system", {
-        recommendationId: rec.id,
-        channels: results.map((r) => `${r.channel}:${r.ok ? "ok" : r.info}`),
-      });
-    }
-    if (this.telegram.enabled) {
-      const r = await this.telegram.sendAlert(rec);
-      await this.audit.log("telegram.alert_sent", "system", {
+    if (!this.telegram.enabled) {
+      await this.audit.log("telegram.alert_skipped", "system", {
         ref: rec.ref,
-        ok: r.ok,
-        info: r.info,
+        info: "Telegram not configured; SMS fallback disabled.",
       });
-      if (!r.ok && this.config.notifications.sms.enabled) {
-        await this.sendSignalSms(rec); // Telegram failed → SMS backup
-      }
-    } else if (this.config.notifications.sms.enabled) {
-      await this.sendSignalSms(rec);
+      return;
     }
+    const r = await this.telegram.sendAlert(rec);
+    await this.audit.log("telegram.alert_sent", "system", {
+      ref: rec.ref,
+      ok: r.ok,
+      info: r.info,
+    });
   }
 
   /**
@@ -264,18 +274,22 @@ export class AvrrioEngine {
    * same safety gates as SMS approval. Returns the operator confirmation text.
    */
   async approvalAction(
-    action: "approve" | "reject" | "stopall",
+    action: "approve" | "reject" | "stopall" | "details",
     ref: string,
   ): Promise<string> {
     if (action === "approve") return this.approveBySms(ref);
     if (action === "reject") return this.rejectBySms(ref);
+    if (action === "details") return this.telegramDetails(ref);
     await this.engageKill("emergency stop (button)", "operator");
     return "🛑 Emergency Stop activated. No trades can execute.";
   }
 
   // --- Telegram (primary alert channel) ---------------------------------
-  telegramTest() {
-    return this.telegram.sendTest();
+  async telegramTest() {
+    const r = await this.telegram.sendTest();
+    if (r.ok) this.telegramTestPassed = true;
+    await this.audit.log("telegram.test_sent", "operator", { ok: r.ok, info: r.info });
+    return r;
   }
   telegramDebug() {
     return this.telegram.debug();
@@ -332,6 +346,7 @@ export class AvrrioEngine {
     }
 
     const result = await this.executor.execute(rec, actor);
+    if (result.paper) this.paperApprovalTestPassed = true;
     return { mode, armed: false, result };
   }
 
@@ -430,6 +445,7 @@ export class AvrrioEngine {
 
   async engageKill(reason: string, actor: string): Promise<void> {
     await this.killSwitch.engage(reason, actor);
+    this.emergencyStopTested = true;
     if (this.config.notifications.sms.enabled) {
       const r = await sendSms(
         this.config,
@@ -456,8 +472,10 @@ export class AvrrioEngine {
   topstepxSync(): Promise<TopstepStatus> {
     return this.client.sync();
   }
-  topstepxAuthTest(): Promise<AuthTestResult> {
-    return this.client.authTest();
+  async topstepxAuthTest(): Promise<AuthTestResult> {
+    const r = await this.client.authTest();
+    this.lastAuthTest = r;
+    return r;
   }
 
   // --- runtime trading mode (paper/live) toggle -------------------------
@@ -465,8 +483,50 @@ export class AvrrioEngine {
     return this.settings.isLiveTradingEnabled();
   }
   async setLiveTrading(enabled: boolean, actor: string): Promise<void> {
+    if (enabled) {
+      const checklist = await this.liveTradingChecklist(true);
+      if (!checklist.ready) {
+        await this.audit.log("settings.live_trading_blocked", actor, { blockers: checklist.blockers });
+        throw new Error(
+          `Live trading is locked until all checks pass: ${checklist.blockers.join("; ")}`,
+        );
+      }
+    }
     await this.settings.setLiveTrading(enabled);
     await this.audit.log("settings.live_trading", actor, { enabled });
+  }
+
+  async liveTradingChecklist(refreshAuth = false): Promise<LiveTradingChecklist> {
+    if (refreshAuth) {
+      this.lastAuthTest = await this.client.authTest();
+    }
+    const auth = this.lastAuthTest;
+    const status = this.client.status();
+    const maxDailyLossConfigured = this.config.safety.dailyMaxLoss > 0 || status.maxDailyLoss > 0;
+    const maxPositionSizeConfigured = this.config.safety.maxPositionSize > 0;
+    const checks: Array<[keyof Omit<LiveTradingChecklist, "ready" | "blockers">, boolean, string]> = [
+      ["projectxAuth", !!auth?.ok, "ProjectX auth must pass"],
+      ["tokenReceived", !!auth?.tokenReceived, "Auth Test must show token received yes"],
+      ["accountFound", !!auth?.accountFound, "Auth Test must show account found yes"],
+      ["telegramTestPassed", this.telegramTestPassed, "Telegram test must pass"],
+      ["emergencyStopTested", this.emergencyStopTested, "Emergency Stop must be tested"],
+      ["maxDailyLossConfigured", maxDailyLossConfigured, "Max daily loss must be configured"],
+      ["maxPositionSizeConfigured", maxPositionSizeConfigured, "Max position size must be configured"],
+      ["paperApprovalTestPassed", this.paperApprovalTestPassed, "At least one paper/simulated approval test must succeed"],
+    ];
+    const blockers = checks.filter(([, ok]) => !ok).map(([, , label]) => label);
+    return {
+      projectxAuth: !!auth?.ok,
+      tokenReceived: !!auth?.tokenReceived,
+      accountFound: !!auth?.accountFound,
+      telegramTestPassed: this.telegramTestPassed,
+      emergencyStopTested: this.emergencyStopTested,
+      maxDailyLossConfigured,
+      maxPositionSizeConfigured,
+      paperApprovalTestPassed: this.paperApprovalTestPassed,
+      ready: blockers.length === 0,
+      blockers,
+    };
   }
 
   /** Exact SMS env vars that are missing (empty when fully configured). */
@@ -594,6 +654,22 @@ export class AvrrioEngine {
       default:
         return "Sorry, I didn't understand. Reply YES <id>, NO <id>, STOPALL, STATUS, or PENDING.";
     }
+  }
+
+  private telegramDetails(ref: string): string {
+    const rec = this.recommendations.findByRef(ref);
+    if (!rec) return `⚠️ Trade ${ref} not found.`;
+    const rr = rec.riskAmount > 0 ? Math.abs(rec.target - rec.entry) / Math.abs(rec.entry - rec.stopLoss) : 0;
+    const liveMode = this.settings.isLiveTradingEnabled() ? "LIVE" : "paper/simulated";
+    return [
+      `📋 Trade ${rec.ref} details`,
+      `${rec.symbol} ${rec.side.toUpperCase()} ×${rec.size}`,
+      `Entry ${rec.entry} · Stop ${rec.stopLoss} · Target ${rec.target}`,
+      `Risk $${rec.riskAmount.toFixed(0)} · R/R ${Number.isFinite(rr) ? rr.toFixed(1) : "n/a"}`,
+      `Status ${rec.status} · Mode ${liveMode}`,
+      `Risk checks ${rec.riskApproved ? "passed" : "failed"}`,
+      `Live trading remains ${this.settings.isLiveTradingEnabled() ? "enabled" : "locked/off"}.`,
+    ].join("\n");
   }
 
   private async approveBySms(ref: string): Promise<string> {

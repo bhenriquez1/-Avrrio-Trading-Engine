@@ -64,12 +64,13 @@
         <h1>Avrrio Trade AI</h1>
         <span class="tag" id="modeTag"></span>
         <span class="spacer"></span>
-        <button class="btn-ghost" id="tradeModeBtn" style="width:auto;padding:8px 16px">Trading: paper</button>
+        <button class="btn-ghost" id="tradeModeBtn" style="width:auto;padding:8px 16px">Enable live trading only after all checks pass</button>
         <button class="btn-danger" id="killBtn" style="width:auto;padding:8px 16px">🛑 Emergency Stop</button>
       </header>
       <main>
         <ul class="warnings" id="warnings"></ul>
         <div class="grid" id="account"></div>
+        <div class="card" id="authPanel"><h2>Auth Test</h2><div class="tag">Click Auth test to diagnose ProjectX safely.</div></div>
 
         <div class="card">
           <h2>🔥 Top opportunities today (Avrrio Score)</h2>
@@ -188,9 +189,10 @@
           `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · ${s.semiAutonomous ? "semi-auto" : "manual"} · AI: ${s.providers.join("+") || "none"} · alerts: ${s.notifications ? s.notifications.primaryChannel : "off"}`;
         $("killBtn").textContent = s.killSwitch.engaged ? "✅ Clear Emergency Stop" : "🛑 Emergency Stop";
         $("killBtn").dataset.engaged = s.killSwitch.engaged ? "1" : "";
-        $("tradeModeBtn").textContent = `Trading: ${s.liveTrading ? "LIVE" : "paper"}`;
+        $("tradeModeBtn").textContent = s.liveTrading ? "Trading: LIVE" : "Enable live trading only after all checks pass";
         $("tradeModeBtn").className = s.liveTrading ? "btn-danger" : "btn-ghost";
         $("tradeModeBtn").dataset.live = s.liveTrading ? "1" : "";
+        const claudeOn = (s.providers || []).includes("claude");
         if (s.scheduler) {
           const sc = s.scheduler;
           $("schedTag").textContent = `scheduler ${sc.enabled ? "ON" : "off"} · scans today ${sc.scansToday}`;
@@ -214,6 +216,8 @@
             <div class="tag">${t.message || ""}</div>
             <div class="tag">Account ID ${t.accountId || "—"} · Buying power $${(t.availableBuyingPower||0).toLocaleString()} · Daily P&amp;L $${(t.dailyPnL||0).toLocaleString()} · Open positions ${t.openPositions||0}</div>
             <div class="tag">Last sync: ${t.lastSyncTime ? new Date(t.lastSyncTime).toLocaleTimeString() : "never"}</div>
+            <div class="tag">Claude analysis: <b style="color:${claudeOn ? "var(--ok)" : "var(--warn)"}">${claudeOn ? "enabled" : "disabled"}</b> · Alerts: <b>${s.notifications.primaryChannel}</b> · SMS: <b>${s.notifications.smsEnabled ? "enabled" : "disabled"}</b></div>
+            ${renderLiveChecklist(s.liveTradingChecklist)}
             <div class="actions" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
               <button style="width:auto;padding:5px 10px" class="${t.connected ? "btn-danger" : "btn-ok"}" onclick="topstepx('${t.connected ? "disconnect" : "connect"}')">${t.connected ? "Disconnect" : "Connect"}</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="authTest()">Auth test</button>
@@ -246,6 +250,7 @@
       };
       window.authTest = async () => {
         const r = await api("/api/topstepx/auth-test", { method: "POST" }).then(j).catch((e) => ({ ok: false, message: e.message, present: {}, missing: [] }));
+        renderAuthPanel(r);
         const lines = [
           (r.ok ? "✅ " : "⚠️ ") + r.message,
           "",
@@ -260,6 +265,19 @@
         alert(lines.join("\n"));
         refresh();
       };
+      function yesNo(v) { return v ? "yes" : "no"; }
+      function renderAuthPanel(r) {
+        const projectxPass = !!r.tokenReceived;
+        const ok = projectxPass ? "var(--ok)" : "var(--block)";
+        $("authPanel").innerHTML = `
+          <h2>Safe Auth Test</h2>
+          <div class="big" style="color:${ok}">ProjectX auth: ${projectxPass ? "pass" : "fail"}</div>
+          <div class="tag">Token received: <b>${yesNo(r.tokenReceived)}</b> · Account found: <b>${yesNo(r.accountFound)}</b></div>
+          <div class="tag">Account ID: <b>${r.accountId || "—"}</b> · Account name: <b>${r.accountName || "—"}</b></div>
+          <div class="tag">Stage: ${r.stage || "n/a"} · HTTP: ${r.httpStatus == null ? "—" : r.httpStatus}</div>
+          <div class="tag">Last error: ${r.lastError || r.message || "—"}</div>
+          <div class="tag">Missing: ${(r.missing && r.missing.length) ? r.missing.join(", ") : "none"}</div>`;
+      }
       function stateLabel(st) {
         return ({
           connected: "Connected", demo: "Demo (no creds)",
@@ -272,10 +290,21 @@
         if (st === "disconnected") return "var(--muted)";
         return "var(--block)";
       }
+      function renderLiveChecklist(c) {
+        if (!c) return "";
+        const rows = [
+          ["ProjectX auth", c.projectxAuth], ["Token received", c.tokenReceived], ["Account found", c.accountFound],
+          ["Telegram test", c.telegramTestPassed], ["Emergency Stop tested", c.emergencyStopTested],
+          ["Max daily loss configured", c.maxDailyLossConfigured], ["Max position size configured", c.maxPositionSizeConfigured],
+          ["Paper approval test", c.paperApprovalTestPassed],
+        ].map(([label, ok]) => `${ok ? "✅" : "⚠️"} ${label}`).join(" · ");
+        return `<div class="tag">Live checklist: ${rows}</div><div class="tag">Live status: <b style="color:${c.ready ? "var(--ok)" : "var(--warn)"}">${c.ready ? "ready to enable" : "locked"}</b>${c.blockers && c.blockers.length ? " — " + c.blockers.join("; ") : ""}</div>`;
+      }
       $("tradeModeBtn").addEventListener("click", async () => {
         const goLive = $("tradeModeBtn").dataset.live !== "1";
-        if (goLive && !confirm("Switch to LIVE trading? Approved trades may be sent for real (still gated by all safety checks).")) return;
-        await api("/api/settings", { method: "POST", body: JSON.stringify({ liveTrading: goLive }) }).then(j).catch((e) => showError("toggle: " + e.message));
+        if (goLive && !confirm("Enable live trading only after all checks pass? Approved trades may be sent for real.")) return;
+        const r = await api("/api/settings", { method: "POST", body: JSON.stringify({ liveTrading: goLive }) }).then(j).catch((e) => ({ error: e.message }));
+        if (r.error) showError("toggle: " + r.error);
         refresh();
       });
 
