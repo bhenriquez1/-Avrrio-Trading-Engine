@@ -28,13 +28,17 @@ export class OrderExecutor {
    */
   async execute(rec: Recommendation, actor: string): Promise<OrderResult> {
     // Final, authoritative gates — re-evaluated at execution time.
-    // Advisor mode: the engine never places orders. This is the single,
-    // central choke point covering every path (manual, Telegram/SMS approve,
-    // pre-approved trigger, full-auto).
+    // Advisor mode: the engine never places orders. This is the central safety
+    // net covering every path (manual, Telegram/SMS approve, pre-approved
+    // trigger, full-auto). We throw WITHOUT persisting "blocked" so the
+    // recommendation stays actionable (it can still be entered manually); the
+    // approval paths surface the advisory message.
     if (this.settings.getTradingMode() === "advisor") {
-      await this.block(rec, actor, "advisor mode — manual entry only");
+      await this.audit.log("order.advisor_skipped", actor, {
+        recommendationId: rec.id,
+      });
       throw new Error(
-        "Blocked: advisor mode is on — AI does not place orders. Enter manually in TopstepX.",
+        "Advisor mode: AI does not place orders. Enter manually in TopstepX.",
       );
     }
     if (!isTradable(rec.symbol)) {

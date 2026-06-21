@@ -133,7 +133,12 @@ export class AvrrioEngine {
   }
 
   warnings(): string[] {
-    return configWarnings(this.config);
+    // Reflect runtime-toggled state (persisted), not just env defaults, so the
+    // full-auto / live-trading safety warnings stay accurate after a switch.
+    return configWarnings(this.config, {
+      liveTradingEnabled: this.settings.isLiveTradingEnabled(),
+      tradingMode: this.settings.getTradingMode(),
+    });
   }
 
   getAccount(): Promise<AccountSummary> {
@@ -336,6 +341,18 @@ export class AvrrioEngine {
     mode: ApprovalMode = "immediate",
   ): Promise<{ mode: ApprovalMode; armed: boolean; result?: OrderResult }> {
     const rec = this.requireLiveRec(id);
+    // Advisor mode: never place an order. Leave the recommendation untouched
+    // (still pending, so it can be entered manually) and surface a clean
+    // acknowledgement rather than persisting it as "blocked" via the executor.
+    if (this.settings.getTradingMode() === "advisor") {
+      await this.audit.log("approve.advisor_only", actor, {
+        recommendationId: rec.id,
+        ref: rec.ref,
+      });
+      throw new Error(
+        `Advisor mode: Avrrio does not place orders. Enter ${rec.ref} manually in TopstepX if you want it.`,
+      );
+    }
     rec.approvalMode = mode;
     rec.decidedBy = actor;
     rec.decidedAt = new Date().toISOString();

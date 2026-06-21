@@ -273,7 +273,22 @@ export function legacyEnvWarnings(): string[] {
   return warnings;
 }
 
-export function configWarnings(config: AvrrioConfig): string[] {
+/**
+ * Optional runtime overrides so warnings reflect dashboard-toggled state
+ * (persisted in RuntimeSettings), not just the env defaults baked into config.
+ */
+export interface WarningOverrides {
+  liveTradingEnabled?: boolean;
+  tradingMode?: TradingMode;
+}
+
+export function configWarnings(
+  config: AvrrioConfig,
+  overrides: WarningOverrides = {},
+): string[] {
+  const liveTradingEnabled =
+    overrides.liveTradingEnabled ?? config.execution.liveTradingEnabled;
+  const tradingMode = overrides.tradingMode ?? config.execution.tradingMode;
   const warnings: string[] = [];
   if (!config.topstep.apiKey || !config.topstep.username) {
     const missing: string[] = [];
@@ -294,7 +309,7 @@ export function configWarnings(config: AvrrioConfig): string[] {
       "DASHBOARD_PASSWORD is not set — the dashboard is UNPROTECTED. Set a password before exposing it.",
     );
   }
-  if (config.execution.liveTradingEnabled) {
+  if (liveTradingEnabled) {
     warnings.push(
       "LIVE_TRADING_ENABLED is true — approved trades will be sent to TopstepX for real.",
     );
@@ -303,11 +318,11 @@ export function configWarnings(config: AvrrioConfig): string[] {
       "LIVE_TRADING_ENABLED is false — approvals are simulated (paper). No real orders are sent.",
     );
   }
-  if (config.execution.tradingMode === "full_auto") {
+  if (tradingMode === "full_auto") {
     warnings.push(
       "TRADING_MODE is full_auto — the engine MAY auto-execute when every gate passes.",
     );
-  } else if (config.execution.tradingMode === "advisor") {
+  } else if (tradingMode === "advisor") {
     warnings.push(
       "TRADING_MODE is advisor — alerts only; the engine will NOT place any orders (enter manually in TopstepX).",
     );
