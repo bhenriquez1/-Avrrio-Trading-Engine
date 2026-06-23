@@ -355,16 +355,47 @@ export class AvrrioEngine {
     });
   }
 
+  /** True when AI consensus endorses this trade's direction (≥1 model agrees). */
+  private consensusSupported(rec: Recommendation): boolean {
+    const c = rec.consensus;
+    return c.recommendation === rec.side && c.agreement >= 1;
+  }
+
+  /**
+   * Whether approving this recommendation would override an unsupportive AI
+   * consensus (no-trade / abstain / opposite). Used by the dashboard to prompt
+   * for an explicit confirmation before approving against the AI.
+   */
+  approvalOverrideInfo(id: string): {
+    overrideRequired: boolean;
+    recommendation: string;
+    agreement: number;
+    available: number;
+  } {
+    const rec = this.recommendations.get(id);
+    if (!rec) throw new Error(`Recommendation ${id} not found.`);
+    return {
+      overrideRequired: !this.consensusSupported(rec),
+      recommendation: rec.consensus.recommendation,
+      agreement: rec.consensus.agreement,
+      available: rec.consensus.available,
+    };
+  }
+
   /**
    * Approve a recommendation.
    * - `immediate` (Mode 1, Manual): execute right away.
    * - `pre-approved` (Mode 2): arm it; the maintenance loop executes it when the
    *   entry is reached AND risk/news/kill-switch still pass, before it expires.
+   *
+   * `override` is required to approve a trade the AI consensus does not endorse;
+   * without it, approval is refused so a human can't override the AI by accident.
    */
   async approve(
     id: string,
     actor: string,
     mode: ApprovalMode = "immediate",
+    override = false,
   ): Promise<{ mode: ApprovalMode; armed: boolean; result?: OrderResult }> {
     const rec = this.requireLiveRec(id);
     // Advisor mode: never place an order. Leave the recommendation untouched
@@ -378,6 +409,28 @@ export class AvrrioEngine {
       throw new Error(
         `Advisor mode: Avrrio does not place orders. Enter ${rec.ref} manually in TopstepX if you want it.`,
       );
+    }
+    // Consensus override guard: refuse to approve against an unsupportive AI
+    // consensus unless the operator explicitly confirms the override.
+    if (!this.consensusSupported(rec)) {
+      const c = rec.consensus;
+      if (!override) {
+        await this.audit.log("approve.override_required", actor, {
+          recommendationId: rec.id,
+          ref: rec.ref,
+          consensus: c.recommendation,
+          agreement: c.agreement,
+        });
+        throw new Error(
+          `OVERRIDE_REQUIRED: AI consensus is "${c.recommendation}" (agreement ${c.agreement}/${c.available}). Re-approve with override to proceed.`,
+        );
+      }
+      await this.audit.log("approve.consensus_override", actor, {
+        recommendationId: rec.id,
+        ref: rec.ref,
+        consensus: c.recommendation,
+        agreement: c.agreement,
+      });
     }
     rec.approvalMode = mode;
     rec.decidedBy = actor;
@@ -410,7 +463,9 @@ export class AvrrioEngine {
   approveByToken(id: string, token: string, mode: ApprovalMode) {
     const rec = this.requireLiveRec(id);
     if (rec.approvalToken !== token) throw new Error("Invalid approval token.");
-    return this.approve(id, "phone", mode);
+    // A tokenized link click is a deliberate human action — allow the override
+    // (it is audited as approve.consensus_override when consensus disagrees).
+    return this.approve(id, "phone", mode, true);
   }
 
   async rejectByToken(id: string, token: string): Promise<void> {
@@ -967,9 +1022,15 @@ export class AvrrioEngine {
         return `⚠️ Trade ${ref} approved, but execution blocked because TopstepX is not connected.`;
       }
     }
+    // Telegram/SMS approval is one-tap; a tap IS the human decision, so we allow
+    // the override but flag it clearly when the AI consensus disagrees.
+    const overriding = !this.consensusSupported(rec);
+    const note = overriding
+      ? `⚠️ Override: AI consensus was "${rec.consensus.recommendation}" (agreement ${rec.consensus.agreement}/${rec.consensus.available}).\n`
+      : "";
     try {
-      const result = await this.approve(rec.id, "phone", "immediate");
-      return `✅ Trade ${ref} approved. ${result.result?.paper ? "Paper fill" : "Order submitted"} (${result.result?.orderId ?? "pending"}).`;
+      const result = await this.approve(rec.id, "phone", "immediate", true);
+      return `${note}✅ Trade ${ref} approved. ${result.result?.paper ? "Paper fill" : "Order submitted"} (${result.result?.orderId ?? "pending"}).`;
     } catch (err) {
       return `⚠️ Trade ${ref} could not execute: ${err instanceof Error ? err.message : "error"}`;
     }
