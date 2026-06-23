@@ -253,7 +253,12 @@
       };
       window.testTelegram = async () => {
         const r = await api("/api/alerts/telegram/test", { method: "POST" }).then(j).catch((e) => ({ ok: false, info: e.message }));
-        alert(r.ok ? "Test Telegram sent — check your chat." : "Telegram not sent: " + (r.info || "error"));
+        if (r.ok) { alert("Test Telegram sent — check your chat."); refresh(); return; }
+        const diag = [];
+        if (r.httpStatus != null) diag.push("HTTP " + r.httpStatus);
+        if (r.errorCode != null) diag.push("error_code " + r.errorCode);
+        if (r.description) diag.push(r.description);
+        alert("Telegram not sent: " + (r.info || "error") + (diag.length ? "\n\n" + diag.join(" · ") : ""));
         refresh();
       };
       function readinessText(r) {
