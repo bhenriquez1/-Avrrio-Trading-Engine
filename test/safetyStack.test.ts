@@ -95,3 +95,44 @@ test("withinAllowedHours respects the window", () => {
   assert.equal(withinAllowedHours(setup, new Date("2026-06-19T10:00:00")), true);
   assert.equal(withinAllowedHours(setup, new Date("2026-06-19T14:00:00")), false);
 });
+
+// --- DAILY_MAX_LOSS: stricter of broker limit and internal env cap ---------
+
+test("daily loss — broker account limit blocks when budget is exhausted", () => {
+  const rm = new RiskManager();
+  // Broker maxDailyLoss 1000, already down 990 -> only $10 left; idea risks ~$40.
+  const acct = { ...account, dayPnl: -990 };
+  const r = rm.assess(idea, acct, { safety });
+  assert.equal(r.approved, false);
+  const v = r.violations.find((x) => x.rule === "daily-loss-budget");
+  assert.ok(v);
+  assert.match(v.message, /broker maxDailyLoss/);
+});
+
+test("daily loss — DAILY_MAX_LOSS provides a tighter cap than the broker", () => {
+  const rm = new RiskManager();
+  // Broker limit 1000 with no loss yet, but internal cap $30 < idea risk ~$40.
+  const r = rm.assess(idea, account, { safety: { ...safety, maxDailyLoss: 30 } });
+  assert.equal(r.approved, false);
+  const v = r.violations.find((x) => x.rule === "daily-loss-budget");
+  assert.ok(v);
+  assert.match(v.message, /DAILY_MAX_LOSS/);
+});
+
+test("daily loss — missing DAILY_MAX_LOSS still enforces broker protection", () => {
+  const rm = new RiskManager();
+  const acct = { ...account, dayPnl: -990 };
+  // safety has no maxDailyLoss -> falls back to broker limit, which still blocks.
+  assert.equal(rm.assess(idea, acct, { safety }).approved, false);
+  // And a comfortably-within-budget trade is still allowed.
+  assert.equal(rm.assess(idea, account, { safety }).approved, true);
+});
+
+test("daily loss — a looser DAILY_MAX_LOSS never weakens the broker limit", () => {
+  const rm = new RiskManager();
+  const acct = { ...account, dayPnl: -990 }; // $10 left under broker's $1000
+  // Internal cap is larger (5000) -> stricter broker limit still applies.
+  const r = rm.assess(idea, acct, { safety: { ...safety, maxDailyLoss: 5000 } });
+  assert.equal(r.approved, false);
+  assert.ok(r.violations.some((x) => x.rule === "daily-loss-budget"));
+});
