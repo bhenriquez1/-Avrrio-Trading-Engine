@@ -37,6 +37,12 @@ export interface RiskContext {
     maxPositionSize: number;
     maxTradesPerDay: number;
     maxRiskPerTrade: number;
+    /**
+     * Internal daily-loss cap (env DAILY_MAX_LOSS). When set (>0), the stricter
+     * of this and the broker account's maxDailyLoss is enforced. 0/undefined =
+     * rely on the broker limit only.
+     */
+    maxDailyLoss?: number;
   };
 }
 
@@ -139,22 +145,34 @@ export class RiskManager {
       });
     }
 
-    if (rules.maxDailyLoss > 0) {
+    // Enforce the STRICTER of the broker account limit and the internal env cap
+    // (DAILY_MAX_LOSS), so the operator's own cap can be tighter than Topstep's.
+    // Either source alone is honored; a missing internal cap falls back to the
+    // broker limit, and vice-versa.
+    const brokerCap = rules.maxDailyLoss > 0 ? rules.maxDailyLoss : 0;
+    const internalCap = context.safety?.maxDailyLoss ?? 0;
+    const caps = [brokerCap, internalCap].filter((c) => c > 0);
+    if (caps.length > 0) {
+      const effectiveLimit = Math.min(...caps);
+      const limitSource =
+        internalCap > 0 && (brokerCap === 0 || internalCap <= brokerCap)
+          ? "DAILY_MAX_LOSS"
+          : "broker maxDailyLoss";
       const lossUsed = Math.max(0, -account.dayPnl);
-      const remaining = rules.maxDailyLoss - lossUsed;
+      const remaining = effectiveLimit - lossUsed;
       if (riskAmount > remaining) {
         violations.push({
           rule: "daily-loss-budget",
-          message: `Trade risks $${riskAmount.toFixed(0)} but only $${remaining.toFixed(0)} of the daily loss budget remains.`,
+          message: `Trade risks $${riskAmount.toFixed(0)} but only $${remaining.toFixed(0)} of the $${effectiveLimit.toFixed(0)} daily loss budget (${limitSource}) remains.`,
           severity: "block",
         });
       } else if (
         riskAmount >
-        rules.maxDailyLoss * this.policy.maxRiskFractionOfDailyLoss
+        effectiveLimit * this.policy.maxRiskFractionOfDailyLoss
       ) {
         violations.push({
           rule: "risk-concentration",
-          message: `Trade risks $${riskAmount.toFixed(0)}, more than ${(this.policy.maxRiskFractionOfDailyLoss * 100).toFixed(0)}% of the daily loss limit on a single trade.`,
+          message: `Trade risks $${riskAmount.toFixed(0)}, more than ${(this.policy.maxRiskFractionOfDailyLoss * 100).toFixed(0)}% of the $${effectiveLimit.toFixed(0)} daily loss limit on a single trade.`,
           severity: "warn",
         });
       }

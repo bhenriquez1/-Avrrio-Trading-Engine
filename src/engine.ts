@@ -209,6 +209,7 @@ export class AvrrioEngine {
         maxPositionSize: this.config.safety.maxPositionSize,
         maxTradesPerDay: this.config.safety.maxTradesPerDay,
         maxRiskPerTrade: this.config.safety.maxRiskPerTrade,
+        maxDailyLoss: this.config.safety.dailyMaxLoss,
       },
     };
 
@@ -478,6 +479,7 @@ export class AvrrioEngine {
         maxPositionSize: this.config.safety.maxPositionSize,
         maxTradesPerDay: this.config.safety.maxTradesPerDay,
         maxRiskPerTrade: this.config.safety.maxRiskPerTrade,
+        maxDailyLoss: this.config.safety.dailyMaxLoss,
       },
     };
     const recheck = this.risk.assess(rec, account, context);
@@ -892,6 +894,7 @@ export class AvrrioEngine {
         maxPositionSize: this.config.safety.maxPositionSize,
         maxTradesPerDay: this.config.safety.maxTradesPerDay,
         maxRiskPerTrade: this.config.safety.maxRiskPerTrade,
+        maxDailyLoss: this.config.safety.dailyMaxLoss,
       },
     };
     const assessment = this.risk.assess(rec, account, context);
