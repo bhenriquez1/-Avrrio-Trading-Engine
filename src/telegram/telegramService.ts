@@ -43,6 +43,31 @@ export class TelegramService {
     return t.enabled && t.botToken.length > 0 && t.chatId.length > 0;
   }
 
+  /**
+   * Exactly which of the THREE required settings are missing/unset, so the
+   * "not configured" reason is precise. Note TELEGRAM_ENABLED=true is required
+   * in addition to the token + chat id — a common gotcha when only the latter
+   * two are set in the host environment.
+   */
+  missing(): string[] {
+    const t = this.config.notifications.telegram;
+    const missing: string[] = [];
+    if (!t.enabled) missing.push("TELEGRAM_ENABLED=true");
+    if (!t.botToken) missing.push("TELEGRAM_BOT_TOKEN");
+    if (!t.chatId) missing.push("TELEGRAM_CHAT_ID");
+    return missing;
+  }
+
+  /** Debug-safe presence map (never exposes the token/chat-id values). */
+  presence(): Record<string, string> {
+    const t = this.config.notifications.telegram;
+    return {
+      TELEGRAM_ENABLED: t.enabled ? "true" : "false (must be true)",
+      TELEGRAM_BOT_TOKEN: maskSecret(t.botToken),
+      TELEGRAM_CHAT_ID: t.chatId ? "set" : "missing",
+    };
+  }
+
   private get token(): string {
     return this.config.notifications.telegram.botToken;
   }
@@ -66,9 +91,13 @@ export class TelegramService {
 
   async sendTest(): Promise<TgResult> {
     if (!this.enabled) {
+      const missing = this.missing();
+      // Debug-safe log (no values) so the host logs show the exact reason.
+      console.warn(`[telegram] not configured — missing/unset: ${missing.join(", ")}`);
       return {
         ok: false,
-        info: "Telegram not configured — set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.",
+        info: `Telegram not configured — missing/unset: ${missing.join(", ")}.`,
+        missing,
       };
     }
     return tgSendMessage(
@@ -93,12 +122,27 @@ export class TelegramService {
    * Calls getUpdates and extracts the distinct chat_id values found, so the
    * operator can discover their TELEGRAM_CHAT_ID. (Does not expose the token.)
    */
-  async debug(): Promise<{ ok: boolean; info: string; chatIds: string[] }> {
+  async debug(): Promise<{
+    ok: boolean;
+    info: string;
+    chatIds: string[];
+    presence: Record<string, string>;
+    missing: string[];
+    enabled: boolean;
+  }> {
+    const presence = this.presence();
+    const missing = this.missing();
+    const base = { presence, missing, enabled: this.enabled };
     if (!this.token) {
-      return { ok: false, info: "TELEGRAM_BOT_TOKEN not set.", chatIds: [] };
+      return {
+        ok: false,
+        info: `TELEGRAM_BOT_TOKEN not set. Missing/unset: ${missing.join(", ") || "none"}.`,
+        chatIds: [],
+        ...base,
+      };
     }
     const r = await tgGetUpdates(this.token);
-    if (!r.ok) return { ok: false, info: r.info, chatIds: [] };
+    if (!r.ok) return { ok: false, info: r.info, chatIds: [], ...base };
     const updates = (r.data as TelegramUpdate[]) ?? [];
     const ids = new Set<string>();
     for (const u of updates) {
@@ -112,6 +156,7 @@ export class TelegramService {
         ? `Found chat id(s): ${[...ids].join(", ")}. Set TELEGRAM_CHAT_ID to yours.`
         : "No updates yet — message your bot once, then retry.",
       chatIds: [...ids],
+      ...base,
     };
   }
 
@@ -180,6 +225,13 @@ export function formatAlert(rec: Recommendation): string {
     `Confidence: ${(rec.consensus.confidence * 100).toFixed(0)}%`,
     `Avrrio Score: ${rec.avrrioScore ?? "n/a"}`,
   ].join("\n");
+}
+
+/** Masks a secret: "set (ab…yz)" showing only first/last 2 chars, or "missing". */
+function maskSecret(v: string): string {
+  if (!v) return "missing";
+  if (v.length <= 4) return "set (****)";
+  return `set (${v.slice(0, 2)}…${v.slice(-2)})`;
 }
 
 // --- minimal Telegram update shapes we read ---

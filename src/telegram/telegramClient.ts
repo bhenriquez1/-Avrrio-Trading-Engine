@@ -6,6 +6,8 @@ export interface TgResult {
   ok: boolean;
   info: string;
   data?: unknown;
+  /** Which TELEGRAM_* settings are missing/unset (set on a config error). */
+  missing?: string[];
 }
 
 export interface InlineButton {

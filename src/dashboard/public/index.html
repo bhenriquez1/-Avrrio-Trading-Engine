@@ -211,6 +211,7 @@
         }
         if (t.usingFallbackData) showError("TopstepX market data unavailable — scans are using SIMULATED data. Fix the connection (Auth test).");
         if (s.notifications && s.notifications.smsEnabled && s.notifications.smsMissing && s.notifications.smsMissing.length) showError("SMS not configured — missing: " + s.notifications.smsMissing.join(", "));
+        if (s.notifications && !s.notifications.telegramEnabled && s.notifications.telegramMissing && s.notifications.telegramMissing.length) showError("Telegram not active — missing/unset: " + s.notifications.telegramMissing.join(", ") + " (use 'Telegram chat ID' for details).");
         $("account").innerHTML = `
           <div class="card"><h2>Account</h2><div>${a ? a.name : "—"}</div></div>
           <div class="card"><h2>Balance</h2><div class="big">${a ? "$"+a.balance.toLocaleString() : "—"}</div></div>
@@ -289,7 +290,14 @@
       };
       window.telegramDebug = async () => {
         const r = await api("/api/telegram/debug").then(j).catch((e) => ({ ok: false, info: e.message, chatIds: [] }));
-        alert((r.ok ? "✅ " : "⚠️ ") + r.info + (r.chatIds && r.chatIds.length ? "\n\nchat_id(s): " + r.chatIds.join(", ") : ""));
+        const lines = [(r.ok ? "✅ " : "⚠️ ") + r.info];
+        if (r.presence) {
+          lines.push("", "Env presence:");
+          for (const [k, v] of Object.entries(r.presence)) lines.push(`  ${k}: ${v}`);
+        }
+        if (r.missing && r.missing.length) lines.push("", "Missing/unset: " + r.missing.join(", "));
+        if (r.chatIds && r.chatIds.length) lines.push("", "chat_id(s): " + r.chatIds.join(", "));
+        alert(lines.join("\n"));
       };
       window.authTest = async () => {
         const r = await api("/api/topstepx/auth-test", { method: "POST" }).then(j).catch((e) => ({ ok: false, message: e.message, present: {}, missing: [] }));
