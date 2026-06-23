@@ -828,8 +828,9 @@ export class AvrrioEngine {
     slot: "morning" | "midday",
     scans: number,
   ): Promise<string> {
-    const header =
-      slot === "morning" ? "☀️ AVRRIO MORNING REPORT" : "🌤️ AVRRIO MIDDAY REPORT";
+    // Title reflects the ACTUAL local time-of-day (ACCOUNT_TIMEZONE, else server
+    // local) — not the scheduler slot — so a report at 8am isn't labelled MIDDAY.
+    const header = reportTitle(localHour(this.config.accountTimezone));
     let account: AccountSummary | null = null;
     try {
       account = await this.getAccount();
@@ -1093,6 +1094,30 @@ export class AvrrioEngine {
     const analysis = await this.claude.analyze(snapshot, account);
     return { assessment, analysis, account };
   }
+}
+
+/** Current hour (0-23) in the given IANA timezone; falls back to server local. */
+export function localHour(timezone: string): number {
+  if (!timezone) return new Date().getHours();
+  try {
+    const s = new Intl.DateTimeFormat("en-US", {
+      hour: "2-digit",
+      hourCycle: "h23",
+      timeZone: timezone,
+    }).format(new Date());
+    const h = parseInt(s, 10);
+    return Number.isFinite(h) ? h % 24 : new Date().getHours();
+  } catch {
+    return new Date().getHours();
+  }
+}
+
+/** Time-of-day report title from a local hour (0-23). */
+export function reportTitle(hour: number): string {
+  if (hour >= 4 && hour < 12) return "🌅 AVRRIO MORNING REPORT";
+  if (hour >= 12 && hour < 17) return "🌤️ AVRRIO MIDDAY REPORT";
+  if (hour >= 17 && hour < 21) return "🌆 AVRRIO EVENING REPORT";
+  return "🌙 AVRRIO NIGHT REPORT";
 }
 
 export type { Recommendation, Side, TopstepStatus };
