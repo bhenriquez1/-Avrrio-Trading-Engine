@@ -87,6 +87,8 @@ async function start() {
           smsEnabled: engine.config.notifications.sms.enabled,
           smsMissing: engine.smsMissing(),
           telegramEnabled: engine.telegram.enabled,
+          telegramPresence: engine.telegram.presence(),
+          telegramMissing: engine.telegram.missing(),
           primaryChannel: engine.telegram.enabled
             ? "telegram"
             : engine.config.notifications.sms.enabled

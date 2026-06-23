@@ -55,6 +55,41 @@ test("telegram enabled only when token + chat id + flag set", () => {
   assert.equal(new TelegramService(config).enabled, false);
 });
 
+test("missing() names exactly which TELEGRAM_* settings are unset", () => {
+  const config = loadConfig();
+  // Only the enable flag is off (common gotcha): token + chat id are set.
+  config.notifications.telegram = { enabled: false, botToken: "t", chatId: "1" };
+  assert.deepEqual(new TelegramService(config).missing(), ["TELEGRAM_ENABLED=true"]);
+  // Enabled but chat id missing.
+  config.notifications.telegram = { enabled: true, botToken: "t", chatId: "" };
+  assert.deepEqual(new TelegramService(config).missing(), ["TELEGRAM_CHAT_ID"]);
+  // Fully configured.
+  config.notifications.telegram = { enabled: true, botToken: "t", chatId: "1" };
+  assert.deepEqual(new TelegramService(config).missing(), []);
+});
+
+test("sendTest reports the precise missing settings without exposing values", async () => {
+  const config = loadConfig();
+  config.notifications.telegram = { enabled: false, botToken: "supersecrettoken", chatId: "1" };
+  const r = await new TelegramService(config).sendTest();
+  assert.equal(r.ok, false);
+  assert.match(r.info, /TELEGRAM_ENABLED=true/);
+  assert.deepEqual(r.missing, ["TELEGRAM_ENABLED=true"]);
+  // The raw token value must never appear in the message.
+  assert.doesNotMatch(r.info, /supersecrettoken/);
+});
+
+test("presence() masks the token and never leaks values", () => {
+  const config = loadConfig();
+  config.notifications.telegram = { enabled: true, botToken: "supersecrettoken", chatId: "12345" };
+  const p = new TelegramService(config).presence();
+  assert.equal(p.TELEGRAM_ENABLED, "true");
+  assert.equal(p.TELEGRAM_CHAT_ID, "set");
+  const token = p.TELEGRAM_BOT_TOKEN ?? "";
+  assert.match(token, /^set \(/);
+  assert.doesNotMatch(token, /supersecrettoken/);
+});
+
 test("parseCallback extracts a button press; unauthorized chat is rejected", async () => {
   const config = loadConfig();
   config.notifications.telegram = { enabled: true, botToken: "t", chatId: "999" };
