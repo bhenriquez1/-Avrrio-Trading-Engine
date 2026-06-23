@@ -600,6 +600,24 @@ export class AvrrioEngine {
     }
     await this.settings.setLiveTrading(enabled);
     await this.audit.log("settings.live_trading", actor, { enabled });
+    if (enabled) {
+      // Explicit, audited milestone + operator alert when going live.
+      await this.audit.log("live_trading_enabled", actor, {
+        tradingMode: this.settings.getTradingMode(),
+        maxPositionSize: this.config.safety.maxPositionSize,
+        accountId: this.client.status().accountId,
+      });
+      await this.broadcast(
+        "🟢 Avrrio Trade AI — LIVE TRADING ENABLED.\n" +
+          `Mode: ${this.settings.getTradingMode()} · max size: ${this.config.safety.maxPositionSize} · human approval required for every trade.`,
+        "live_enabled",
+      );
+    } else {
+      await this.broadcast(
+        "⚪ Avrrio Trade AI — live trading disabled (back to paper).",
+        "live_disabled",
+      );
+    }
   }
 
   async liveTradingChecklist(refreshAuth = false): Promise<LiveTradingChecklist> {
