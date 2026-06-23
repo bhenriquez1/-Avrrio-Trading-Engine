@@ -37,6 +37,7 @@ function snap(last: number): MarketSnapshot {
 
 function makeEngine(results: ScanResult[]) {
   const proposed: string[] = [];
+  const events: string[] = [];
   let refCounter = 1000;
   const engine = {
     async scan() {
@@ -49,9 +50,9 @@ function makeEngine(results: ScanResult[]) {
       proposed.push(input.symbol);
       return { ref: `T-${++refCounter}`, status: "pending" } as Recommendation;
     },
-    audit: { async log() {} },
+    audit: { async log(type: string) { events.push(type); } },
   } as unknown as AvrrioEngine;
-  return { engine, proposed };
+  return { engine, proposed, events };
 }
 
 test("only tradable, high-score, directional setups qualify", async () => {
@@ -92,4 +93,39 @@ test("alerts are capped at maxAlerts", async () => {
   const r = await sched.runScanCycle();
   assert.equal(r.alerted, 2);
   assert.equal(proposed.length, 2);
+});
+
+test("audit records scan.started + scan.completed; alert path proposes (-> Telegram)", async () => {
+  const config = loadConfig();
+  config.notifications.opportunityAlertScore = 85;
+  config.scheduler.maxAlerts = 3;
+  config.scheduler.minRewardRisk = 2;
+  const { engine, proposed, events } = makeEngine([
+    result({ symbol: "NQ", score: 90, direction: "bullish" }),
+  ]);
+  const sched = new Scheduler(engine, config, new RuntimeSettings(config));
+  const r = await sched.runScanCycle();
+  assert.equal(r.alerted, 1);
+  assert.deepEqual(proposed, ["NQ"]); // propose() is what fires the Telegram alert
+  assert.ok(events.includes("scan.started"));
+  assert.ok(events.includes("scan.completed"));
+  assert.ok(events.includes("scheduler.alert"));
+  assert.ok(!events.includes("no_qualified_setups"));
+});
+
+test("no qualifying setup -> no proposal/alert, logs no_qualified_setups", async () => {
+  const config = loadConfig();
+  config.notifications.opportunityAlertScore = 85;
+  const { engine, proposed, events } = makeEngine([
+    result({ symbol: "ES", score: 70, direction: "bullish" }), // below threshold
+    result({ symbol: "AAPL", score: 99, tradable: false }),     // watchlist only
+  ]);
+  const sched = new Scheduler(engine, config, new RuntimeSettings(config));
+  const r = await sched.runScanCycle();
+  assert.equal(r.alerted, 0);
+  assert.equal(proposed.length, 0); // nothing proposed -> no Telegram message
+  assert.ok(events.includes("scan.started"));
+  assert.ok(events.includes("scan.completed"));
+  assert.ok(events.includes("no_qualified_setups"));
+  assert.ok(!events.includes("scheduler.alert"));
 });
