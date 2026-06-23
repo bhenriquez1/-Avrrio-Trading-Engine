@@ -3,6 +3,21 @@ import { dirname } from "node:path";
 import type { AvrrioConfig } from "../config.js";
 import { parseTradingMode, type TradingMode } from "../types.js";
 
+/** Operator-completed safety validations (persisted, survive restarts). */
+export interface SafetyValidations {
+  telegramTestPassed: boolean;
+  emergencyStopTested: boolean;
+  paperApprovalTestPassed: boolean;
+}
+
+export type SafetyValidationKey = keyof SafetyValidations;
+
+const EMPTY_VALIDATIONS: SafetyValidations = {
+  telegramTestPassed: false,
+  emergencyStopTested: false,
+  paperApprovalTestPassed: false,
+};
+
 /**
  * Runtime-toggleable settings (persisted), so the operator can flip
  * paper/live from the dashboard without a redeploy. Defaults come from env and
@@ -13,6 +28,7 @@ export class RuntimeSettings {
   private schedulerEnabled: boolean;
   private schedulerIntervalMinutes: number;
   private tradingMode: TradingMode;
+  private validations: SafetyValidations = { ...EMPTY_VALIDATIONS };
 
   constructor(
     config: AvrrioConfig,
@@ -32,6 +48,7 @@ export class RuntimeSettings {
         schedulerEnabled?: boolean;
         schedulerIntervalMinutes?: number;
         tradingMode?: string;
+        validations?: Partial<SafetyValidations>;
       };
       if (typeof data.liveTrading === "boolean") this.liveTrading = data.liveTrading;
       if (typeof data.schedulerEnabled === "boolean")
@@ -40,9 +57,31 @@ export class RuntimeSettings {
         this.schedulerIntervalMinutes = data.schedulerIntervalMinutes;
       if (typeof data.tradingMode === "string")
         this.tradingMode = parseTradingMode(data.tradingMode);
+      if (data.validations && typeof data.validations === "object") {
+        for (const k of Object.keys(EMPTY_VALIDATIONS) as SafetyValidationKey[]) {
+          if (typeof data.validations[k] === "boolean")
+            this.validations[k] = data.validations[k] as boolean;
+        }
+      }
     } catch {
       /* keep env defaults */
     }
+  }
+
+  /** Snapshot of the persisted safety validations. */
+  getValidations(): SafetyValidations {
+    return { ...this.validations };
+  }
+  /** Mark a validation as passed (persisted). Idempotent. */
+  async markValidation(key: SafetyValidationKey): Promise<void> {
+    if (this.validations[key]) return;
+    this.validations[key] = true;
+    await this.persist();
+  }
+  /** Clear all safety validations so they must be re-verified (persisted). */
+  async resetValidations(): Promise<void> {
+    this.validations = { ...EMPTY_VALIDATIONS };
+    await this.persist();
   }
 
   getTradingMode(): TradingMode {
@@ -84,6 +123,7 @@ export class RuntimeSettings {
           schedulerEnabled: this.schedulerEnabled,
           schedulerIntervalMinutes: this.schedulerIntervalMinutes,
           tradingMode: this.tradingMode,
+          validations: this.validations,
         },
         null,
         2,

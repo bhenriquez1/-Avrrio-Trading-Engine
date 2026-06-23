@@ -58,6 +58,31 @@ export interface LiveTradingChecklist {
   blockers: string[];
 }
 
+/** Consolidated, operator-facing live-trading readiness report. */
+export interface ReadinessReport {
+  projectxAuth: boolean;
+  accountSync: {
+    connected: boolean;
+    accountId: string;
+    buyingPower: number;
+    dailyPnL: number;
+    lastSyncTime: string | null;
+  };
+  telegram: boolean;
+  emergencyStop: boolean;
+  riskLimits: { dailyLoss: boolean; positionSize: boolean };
+  paperApproval: boolean;
+  blockers: string[];
+  /** Checklist items passed / total, plus a 0-100 percentage. */
+  passed: number;
+  total: number;
+  scorePct: number;
+  /** Always false during the safety-validation phase. */
+  liveTradingEnabled: boolean;
+  /** True only when every check passes (live trading may then be enabled). */
+  ready: boolean;
+}
+
 export interface ProposeInput extends TradeIdea {
   /** Optional predefined setup this idea belongs to. */
   setupName?: string;
@@ -89,9 +114,9 @@ export class AvrrioEngine {
   readonly settings: RuntimeSettings;
   readonly scheduler: Scheduler;
   readonly auth: Auth;
-  private telegramTestPassed = false;
-  private emergencyStopTested = false;
-  private paperApprovalTestPassed = false;
+  // Validation flags (Telegram/Emergency Stop/paper approval) are persisted in
+  // RuntimeSettings so they survive restarts; auth/token/account below stay
+  // live-checked so a broken connection always reflects reality.
   private lastAuthTest: AuthTestResult | null = null;
 
   constructor(config = loadConfig()) {
@@ -299,7 +324,7 @@ export class AvrrioEngine {
   // --- Telegram (primary alert channel) ---------------------------------
   async telegramTest() {
     const r = await this.telegram.sendTest();
-    if (r.ok) this.telegramTestPassed = true;
+    if (r.ok) await this.settings.markValidation("telegramTestPassed");
     await this.audit.log("telegram.test_sent", "operator", { ok: r.ok, info: r.info });
     return r;
   }
@@ -370,7 +395,7 @@ export class AvrrioEngine {
     }
 
     const result = await this.executor.execute(rec, actor);
-    if (result.paper) this.paperApprovalTestPassed = true;
+    if (result.paper) await this.settings.markValidation("paperApprovalTestPassed");
     return { mode, armed: false, result };
   }
 
@@ -469,7 +494,7 @@ export class AvrrioEngine {
 
   async engageKill(reason: string, actor: string): Promise<void> {
     await this.killSwitch.engage(reason, actor);
-    this.emergencyStopTested = true;
+    await this.settings.markValidation("emergencyStopTested");
     if (this.config.notifications.sms.enabled) {
       const r = await sendSms(
         this.config,
@@ -526,31 +551,114 @@ export class AvrrioEngine {
     }
     const auth = this.lastAuthTest;
     const status = this.client.status();
+    const v = this.settings.getValidations();
     const maxDailyLossConfigured = this.config.safety.dailyMaxLoss > 0 || status.maxDailyLoss > 0;
     const maxPositionSizeConfigured = this.config.safety.maxPositionSize > 0;
     const checks: Array<[keyof Omit<LiveTradingChecklist, "ready" | "blockers">, boolean, string]> = [
       ["projectxAuth", !!auth?.ok, "ProjectX auth must pass"],
       ["tokenReceived", !!auth?.tokenReceived, "Auth Test must show token received yes"],
       ["accountFound", !!auth?.accountFound, "Auth Test must show account found yes"],
-      ["telegramTestPassed", this.telegramTestPassed, "Telegram test must pass"],
-      ["emergencyStopTested", this.emergencyStopTested, "Emergency Stop must be tested"],
+      ["telegramTestPassed", v.telegramTestPassed, "Telegram test must pass"],
+      ["emergencyStopTested", v.emergencyStopTested, "Emergency Stop must be tested"],
       ["maxDailyLossConfigured", maxDailyLossConfigured, "Max daily loss must be configured"],
       ["maxPositionSizeConfigured", maxPositionSizeConfigured, "Max position size must be configured"],
-      ["paperApprovalTestPassed", this.paperApprovalTestPassed, "At least one paper/simulated approval test must succeed"],
+      ["paperApprovalTestPassed", v.paperApprovalTestPassed, "At least one paper/simulated approval test must succeed"],
     ];
     const blockers = checks.filter(([, ok]) => !ok).map(([, , label]) => label);
     return {
       projectxAuth: !!auth?.ok,
       tokenReceived: !!auth?.tokenReceived,
       accountFound: !!auth?.accountFound,
-      telegramTestPassed: this.telegramTestPassed,
-      emergencyStopTested: this.emergencyStopTested,
+      telegramTestPassed: v.telegramTestPassed,
+      emergencyStopTested: v.emergencyStopTested,
       maxDailyLossConfigured,
       maxPositionSizeConfigured,
-      paperApprovalTestPassed: this.paperApprovalTestPassed,
+      paperApprovalTestPassed: v.paperApprovalTestPassed,
       ready: blockers.length === 0,
       blockers,
     };
+  }
+
+  /** Clear the operator-completed safety validations so they must be re-tested. */
+  async resetSafetyValidations(actor: string): Promise<void> {
+    await this.settings.resetValidations();
+    await this.audit.log("safety.validations_reset", actor, {});
+  }
+
+  /**
+   * Consolidated readiness report: re-checks auth live, folds in the persisted
+   * validations + risk-limit config + account-sync snapshot, and scores overall
+   * readiness. Read-only — never enables live trading or places an order.
+   */
+  async readinessReport(refreshAuth = true): Promise<ReadinessReport> {
+    const c = await this.liveTradingChecklist(refreshAuth);
+    const s = this.client.status();
+    const items = [
+      c.projectxAuth,
+      c.tokenReceived,
+      c.accountFound,
+      c.telegramTestPassed,
+      c.emergencyStopTested,
+      c.maxDailyLossConfigured,
+      c.maxPositionSizeConfigured,
+      c.paperApprovalTestPassed,
+    ];
+    const passed = items.filter(Boolean).length;
+    const total = items.length;
+    return {
+      projectxAuth: c.projectxAuth && c.tokenReceived && c.accountFound,
+      accountSync: {
+        connected: s.connected && s.authenticated,
+        accountId: s.accountId,
+        buyingPower: s.availableBuyingPower,
+        dailyPnL: s.dailyPnL,
+        lastSyncTime: s.lastSyncTime,
+      },
+      telegram: c.telegramTestPassed,
+      emergencyStop: c.emergencyStopTested,
+      riskLimits: {
+        dailyLoss: c.maxDailyLossConfigured,
+        positionSize: c.maxPositionSizeConfigured,
+      },
+      paperApproval: c.paperApprovalTestPassed,
+      blockers: c.blockers,
+      passed,
+      total,
+      scorePct: Math.round((passed / total) * 100),
+      liveTradingEnabled: this.isLiveTradingEnabled(),
+      ready: c.ready,
+    };
+  }
+
+  /** Telegram/console-friendly readiness summary (no secrets). */
+  readinessReportText(r: ReadinessReport): string {
+    const yn = (b: boolean) => (b ? "✅" : "⚠️");
+    return [
+      "📋 AVRRIO LIVE-TRADING READINESS",
+      "",
+      `${yn(r.projectxAuth)} ProjectX auth (token + account)`,
+      `${yn(r.accountSync.connected)} Account sync — ID ${r.accountSync.accountId || "—"} · BP $${r.accountSync.buyingPower.toLocaleString()} · Day P&L ${r.accountSync.dailyPnL >= 0 ? "+" : ""}$${r.accountSync.dailyPnL.toLocaleString()}`,
+      `${yn(r.telegram)} Telegram alert test`,
+      `${yn(r.emergencyStop)} Emergency Stop tested`,
+      `${yn(r.riskLimits.dailyLoss)} Max daily loss configured`,
+      `${yn(r.riskLimits.positionSize)} Max position size configured`,
+      `${yn(r.paperApproval)} Paper approval workflow`,
+      "",
+      `Score: ${r.passed}/${r.total} (${r.scorePct}%)`,
+      `Live trading: ${r.liveTradingEnabled ? "ENABLED" : "disabled"} · Overall: ${r.ready ? "READY" : "NOT READY"}`,
+      r.blockers.length ? `Blockers: ${r.blockers.join("; ")}` : "No blockers remaining.",
+    ].join("\n");
+  }
+
+  /** Build + broadcast the readiness report to the operator's channels. */
+  async sendReadinessReport(actor: string): Promise<ReadinessReport> {
+    const report = await this.readinessReport(true);
+    await this.broadcast(this.readinessReportText(report), "readiness");
+    await this.audit.log("readiness.sent", actor, {
+      score: report.scorePct,
+      ready: report.ready,
+    });
+    return report;
   }
 
   // --- trading mode (advisor / telegram_approval / full_auto) -----------
@@ -769,6 +877,50 @@ export class AvrrioEngine {
     ].join("\n");
   }
 
+  /**
+   * Re-evaluates live risk limits for a recommendation at approval time and
+   * returns a human reason if it is locked out (daily-loss budget, position
+   * size, per-trade risk, or max trades/day), else null. Read-only.
+   */
+  private async riskLockoutReason(rec: Recommendation): Promise<string | null> {
+    const account = await this.getAccount();
+    const context: RiskContext = {
+      symbolTradable: isTradable(rec.symbol),
+      killSwitchEngaged: this.killSwitch.isEngaged(),
+      tradesToday: this.recommendations.executedToday(),
+      safety: {
+        maxPositionSize: this.config.safety.maxPositionSize,
+        maxTradesPerDay: this.config.safety.maxTradesPerDay,
+        maxRiskPerTrade: this.config.safety.maxRiskPerTrade,
+      },
+    };
+    const assessment = this.risk.assess(rec, account, context);
+    const lockoutRules = new Set([
+      "daily-loss-budget",
+      "max-position-size",
+      "engine-max-position-size",
+      "max-risk-per-trade",
+      "max-trades-per-day",
+    ]);
+    const hit = assessment.violations.filter((v) => lockoutRules.has(v.rule));
+    return hit.length ? hit.map((v) => v.message).join("; ") : null;
+  }
+
+  /** Sends a Telegram (and SMS, if on) warning that a trade was blocked. */
+  private async warnLockout(
+    rec: Recommendation,
+    reason: string,
+    kind: string,
+  ): Promise<void> {
+    const text = `⚠️ AVRRIO SAFETY BLOCK\nTrade ${rec.ref} (${rec.symbol} ${rec.side.toUpperCase()}) was blocked.\nReason: ${reason}.\nNo order was placed.`;
+    await this.broadcast(text, "safety.lockout");
+    await this.audit.log("safety.lockout_warned", "system", {
+      ref: rec.ref,
+      kind,
+      reason,
+    });
+  }
+
   private async approveBySms(ref: string): Promise<string> {
     const rec = this.recommendations.findByRef(ref);
     if (!rec) return `⚠️ Trade ${ref} not found.`;
@@ -777,6 +929,7 @@ export class AvrrioEngine {
       return `ℹ️ Advisor mode: Avrrio does not place orders. Enter ${ref} manually in TopstepX if you want it.`;
     }
     if (this.killSwitch.isEngaged()) {
+      await this.warnLockout(rec, "Emergency Stop is engaged", "kill-switch");
       return `🛑 Emergency Stop active. Trade ${ref} cannot execute.`;
     }
     if (rec.status !== "pending" && rec.status !== "armed") {
@@ -786,6 +939,13 @@ export class AvrrioEngine {
       rec.status = "expired";
       await this.recommendations.update(rec);
       return `⚠️ Trade ${ref} expired. Approval blocked.`;
+    }
+    // Re-check live risk limits at approval time: daily-loss lockout, position
+    // size, per-trade risk, max trades. Block + warn if any is hit.
+    const lockout = await this.riskLockoutReason(rec);
+    if (lockout) {
+      await this.warnLockout(rec, lockout, "risk-limit");
+      return `⚠️ Trade ${ref} blocked by risk limits: ${lockout}.`;
     }
     // Block if the market has moved too far from entry.
     const quote = await this.client.getQuote(rec.symbol);
