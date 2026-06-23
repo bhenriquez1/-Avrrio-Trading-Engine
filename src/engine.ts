@@ -166,6 +166,21 @@ export class AvrrioEngine {
     });
   }
 
+  /** AI assistant health (Claude status/model/last success/last error + providers). */
+  aiHealth(): {
+    status: "online" | "offline";
+    enabled: boolean;
+    model: string;
+    lastSuccessAt: string | null;
+    lastError: string | null;
+    providers: string[];
+  } {
+    return {
+      ...this.claude.health(),
+      providers: this.consensus.availableProviders(),
+    };
+  }
+
   getAccount(): Promise<AccountSummary> {
     return this.client.getAccount();
   }
@@ -423,6 +438,7 @@ export class AvrrioEngine {
   private async cmdStatus(): Promise<string> {
     const s = this.client.status();
     const sched = this.scheduler.stats();
+    const ai = this.aiHealth();
     return [
       "📊 AVRRIO STATUS",
       `Mode: ${this.getTradingMode()} · Trading: ${this.isLiveTradingEnabled() ? "LIVE" : "paper"}`,
@@ -431,6 +447,7 @@ export class AvrrioEngine {
       `Open positions: ${s.openPositions}`,
       `Kill switch: ${this.killSwitch.isEngaged() ? "ENGAGED 🛑" : "clear"}`,
       `Scheduler: ${sched.enabled ? "ON" : "off"} (every ${sched.intervalMinutes}m) · scans today ${sched.scansToday}`,
+      `AI: ${ai.status} (${ai.model})${ai.status === "offline" ? " — set ANTHROPIC_API_KEY" : ""} · providers: ${ai.providers.join("+") || "none"}`,
       `Pending approvals: ${this.recommendations.pending().length}`,
     ].join("\n");
   }
