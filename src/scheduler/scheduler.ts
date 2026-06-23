@@ -113,6 +113,11 @@ export class Scheduler {
     }
     this.scansToday++;
     this.lastScanTime = new Date().toISOString();
+    await this.engine.audit.log("scan.started", "system", {
+      intervalMinutes: this.intervalMinutes,
+      minScore: this.minScore,
+      minRewardRisk: this.config.scheduler.minRewardRisk,
+    });
     const results = await this.engine.scan({ limit: 12 });
     const minRR = this.config.scheduler.minRewardRisk;
 
@@ -156,6 +161,21 @@ export class Scheduler {
           rewardRisk: Number(rr.toFixed(2)),
         });
       }
+    }
+
+    // Record the outcome so the audit log shows the scheduler ran even when
+    // nothing qualified (no Telegram message is sent in that case).
+    await this.engine.audit.log("scan.completed", "system", {
+      scanned: results.length,
+      qualifying: candidates.length,
+      alerted,
+      refs,
+    });
+    if (alerted === 0) {
+      await this.engine.audit.log("no_qualified_setups", "system", {
+        scanned: results.length,
+        qualifying: candidates.length,
+      });
     }
 
     return {
