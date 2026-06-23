@@ -157,8 +157,21 @@ async function start() {
     "/api/recommendations/:id/approve",
     guard,
     wrap(async (req, res) => {
-      const { mode } = req.body as { mode?: "immediate" | "pre-approved" };
-      res.json(await engine.approve(req.params.id ?? "", "operator", mode ?? "immediate"));
+      const { mode, override } = req.body as {
+        mode?: "immediate" | "pre-approved";
+        override?: boolean;
+      };
+      const id = req.params.id ?? "";
+      // If approving against an unsupportive AI consensus, ask the dashboard to
+      // confirm before executing (no accidental overrides).
+      const info = engine.approvalOverrideInfo(id);
+      if (info.overrideRequired && !override) {
+        res.json({ overrideRequired: true, consensus: info });
+        return;
+      }
+      res.json(
+        await engine.approve(id, "operator", mode ?? "immediate", !!override),
+      );
     }),
   );
 

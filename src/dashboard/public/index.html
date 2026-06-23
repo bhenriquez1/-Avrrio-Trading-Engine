@@ -494,14 +494,20 @@
         refresh();
       });
 
-      window.approve = async (id, mode) => {
+      window.approve = async (id, mode, override) => {
         const label = mode === "pre-approved"
           ? "Pre-approve this trade? It will execute only when the entry is reached and all checks still pass."
           : "Approve and place this trade now?";
-        if (!confirm(label)) return;
+        if (!override && !confirm(label)) return;
         const r = await api(`/api/recommendations/${id}/approve`, {
-          method: "POST", body: JSON.stringify({ mode }),
+          method: "POST", body: JSON.stringify({ mode, override: !!override }),
         }).then(j);
+        if (r && r.overrideRequired) {
+          const c = r.consensus || {};
+          const ok = confirm(`⚠️ AI consensus does NOT support this trade — recommendation "${c.recommendation}" (agreement ${c.agreement}/${c.available}).\n\nApprove anyway (override the AI)?`);
+          if (!ok) { refresh(); return; }
+          return window.approve(id, mode, true); // re-submit with explicit override
+        }
         if (r.error) alert("Error: " + r.error);
         refresh();
       };
