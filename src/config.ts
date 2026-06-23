@@ -75,6 +75,8 @@ export interface AvrrioConfig {
   };
   /** Public base URL used to build approve/reject links in notifications. */
   publicBaseUrl: string;
+  /** IANA timezone for report titles/labels (e.g. "America/New_York"). Empty = server local. */
+  accountTimezone: string;
   queue: {
     /** Minutes a recommendation stays valid for approval before it expires. */
     approvalExpiryMinutes: number;
@@ -210,6 +212,7 @@ export function loadConfig(): AvrrioConfig {
       reportHours: parseHours(env("REPORT_HOURS", "8,12,16")),
     },
     publicBaseUrl: env("PUBLIC_BASE_URL", "http://localhost:4317"),
+    accountTimezone: env("ACCOUNT_TIMEZONE").trim(),
     queue: {
       approvalExpiryMinutes: num("NOTIFICATION_EXPIRY_MINUTES", 5),
       entryTriggerTolerancePct: num("EXEC_TRIGGER_TOLERANCE_PCT", 0.001),
