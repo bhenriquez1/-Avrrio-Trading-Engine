@@ -269,6 +269,28 @@ async function start() {
     wrap(async (_req, res) => res.json(await engine.liveTradingChecklist(false))),
   );
 
+  // --- safety validation phase: readiness report + reset ---------------
+  // Consolidated readiness report (read-only; re-checks auth live).
+  app.get(
+    "/api/readiness",
+    wrap(async (_req, res) => res.json(await engine.readinessReport(true))),
+  );
+  // Send the readiness report to Telegram.
+  app.post(
+    "/api/readiness/send",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.sendReadinessReport("operator"))),
+  );
+  // Clear the operator-completed safety validations (forces re-verification).
+  app.post(
+    "/api/safety/reset",
+    guard,
+    wrap(async (_req, res) => {
+      await engine.resetSafetyValidations("operator");
+      res.json(await engine.liveTradingChecklist(false));
+    }),
+  );
+
   // --- trading mode (advisor / telegram_approval / full_auto) ----------
   app.post(
     "/api/mode",

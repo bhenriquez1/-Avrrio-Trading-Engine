@@ -231,6 +231,9 @@
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="topstepx('sync')">Sync</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="testTelegram()">Test Telegram</button>
               <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="telegramDebug()">Telegram chat ID</button>
+              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="readiness()">Readiness report</button>
+              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="sendReadiness()">Send report</button>
+              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="resetValidations()">Reset validations</button>
               ${s.notifications && s.notifications.smsEnabled ? `<button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="testSms()">Test SMS</button>` : ""}
             </div>
           </div>`;
@@ -250,6 +253,39 @@
       window.testTelegram = async () => {
         const r = await api("/api/alerts/telegram/test", { method: "POST" }).then(j).catch((e) => ({ ok: false, info: e.message }));
         alert(r.ok ? "Test Telegram sent — check your chat." : "Telegram not sent: " + (r.info || "error"));
+        refresh();
+      };
+      function readinessText(r) {
+        const yn = (b) => (b ? "✅" : "⚠️");
+        return [
+          "📋 LIVE-TRADING READINESS",
+          `${yn(r.projectxAuth)} ProjectX auth (token + account)`,
+          `${yn(r.accountSync.connected)} Account sync — ID ${r.accountSync.accountId || "—"} · BP $${(r.accountSync.buyingPower||0).toLocaleString()} · Day P&L $${(r.accountSync.dailyPnL||0).toLocaleString()}`,
+          `${yn(r.telegram)} Telegram alert test`,
+          `${yn(r.emergencyStop)} Emergency Stop tested`,
+          `${yn(r.riskLimits.dailyLoss)} Max daily loss configured`,
+          `${yn(r.riskLimits.positionSize)} Max position size configured`,
+          `${yn(r.paperApproval)} Paper approval workflow`,
+          "",
+          `Score: ${r.passed}/${r.total} (${r.scorePct}%)`,
+          `Live trading: ${r.liveTradingEnabled ? "ENABLED" : "disabled"} · Overall: ${r.ready ? "READY" : "NOT READY"}`,
+          r.blockers && r.blockers.length ? "Blockers: " + r.blockers.join("; ") : "No blockers remaining.",
+        ].join("\n");
+      }
+      window.readiness = async () => {
+        const r = await api("/api/readiness").then(j).catch((e) => ({ error: e.message }));
+        if (r.error) { showError("readiness: " + r.error); return; }
+        alert(readinessText(r));
+      };
+      window.sendReadiness = async () => {
+        const r = await api("/api/readiness/send", { method: "POST" }).then(j).catch((e) => ({ error: e.message }));
+        if (r.error) { showError("readiness send: " + r.error); return; }
+        alert("Readiness report sent to Telegram.\n\n" + readinessText(r));
+      };
+      window.resetValidations = async () => {
+        if (!confirm("Reset Telegram/Emergency Stop/paper-approval validations? They will need re-testing before live trading can be enabled.")) return;
+        await api("/api/safety/reset", { method: "POST" }).then(j).catch((e) => showError("reset: " + e.message));
+        refresh();
       };
       window.telegramDebug = async () => {
         const r = await api("/api/telegram/debug").then(j).catch((e) => ({ ok: false, info: e.message, chatIds: [] }));
