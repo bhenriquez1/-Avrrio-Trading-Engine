@@ -225,8 +225,9 @@ export function loadConfig(): AvrrioConfig {
       },
       telegram: {
         enabled: bool("TELEGRAM_ENABLED", false),
-        botToken: env("TELEGRAM_BOT_TOKEN"),
-        chatId: env("TELEGRAM_CHAT_ID"),
+        // Trim to tolerate stray whitespace/newlines pasted into host env vars.
+        botToken: env("TELEGRAM_BOT_TOKEN").trim(),
+        chatId: env("TELEGRAM_CHAT_ID").trim(),
       },
       sms: {
         enabled: bool("SMS_ENABLED", false),

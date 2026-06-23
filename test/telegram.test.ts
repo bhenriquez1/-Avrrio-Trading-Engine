@@ -81,13 +81,31 @@ test("sendTest reports the precise missing settings without exposing values", as
 
 test("presence() masks the token and never leaks values", () => {
   const config = loadConfig();
-  config.notifications.telegram = { enabled: true, botToken: "supersecrettoken", chatId: "12345" };
+  config.notifications.telegram = { enabled: true, botToken: "123456789:AAHsupersecrettoken_abcdefghij", chatId: "12345" };
   const p = new TelegramService(config).presence();
   assert.equal(p.TELEGRAM_ENABLED, "true");
   assert.equal(p.TELEGRAM_CHAT_ID, "set");
   const token = p.TELEGRAM_BOT_TOKEN ?? "";
   assert.match(token, /^set \(/);
+  assert.match(token, /format OK/);
   assert.doesNotMatch(token, /supersecrettoken/);
+});
+
+test("presence() flags a malformed (colon-less) bot token", () => {
+  const config = loadConfig();
+  config.notifications.telegram = { enabled: true, botToken: "AAAH5Habugxulk-s4MwjEcADrYG94oV6awUY", chatId: "12345" };
+  const token = new TelegramService(config).presence().TELEGRAM_BOT_TOKEN ?? "";
+  assert.match(token, /INVALID format/);
+});
+
+test("sendTest rejects a malformed bot token without leaking it", async () => {
+  const config = loadConfig();
+  // Colon-less token (Brian's case): the numeric <bot_id>: prefix is missing.
+  config.notifications.telegram = { enabled: true, botToken: "AAAH5Habugxulk-s4MwjEcADrYG94oV6awUY", chatId: "12345" };
+  const r = await new TelegramService(config).sendTest();
+  assert.equal(r.ok, false);
+  assert.match(r.info, /Invalid bot token format/);
+  assert.doesNotMatch(r.info, /AAAH5Habugxulk/);
 });
 
 test("parseCallback extracts a button press; unauthorized chat is rejected", async () => {

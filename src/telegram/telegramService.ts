@@ -2,6 +2,7 @@ import type { AvrrioConfig } from "../config.js";
 import type { Recommendation } from "../execution/recommendations.js";
 import { findSymbol } from "../symbols/registry.js";
 import {
+  isValidBotTokenShape,
   tgAnswerCallback,
   tgEditReplyMarkup,
   tgGetUpdates,
@@ -61,9 +62,14 @@ export class TelegramService {
   /** Debug-safe presence map (never exposes the token/chat-id values). */
   presence(): Record<string, string> {
     const t = this.config.notifications.telegram;
+    const tokenShape = !t.botToken
+      ? maskSecret(t.botToken)
+      : isValidBotTokenShape(t.botToken)
+        ? `${maskSecret(t.botToken)} — format OK`
+        : `${maskSecret(t.botToken)} — INVALID format (need <bot_id>:<secret>)`;
     return {
       TELEGRAM_ENABLED: t.enabled ? "true" : "false (must be true)",
-      TELEGRAM_BOT_TOKEN: maskSecret(t.botToken),
+      TELEGRAM_BOT_TOKEN: tokenShape,
       TELEGRAM_CHAT_ID: t.chatId ? "set" : "missing",
     };
   }
@@ -98,6 +104,13 @@ export class TelegramService {
         ok: false,
         info: `Telegram not configured — missing/unset: ${missing.join(", ")}.`,
         missing,
+      };
+    }
+    if (!isValidBotTokenShape(this.token)) {
+      console.warn("[telegram] bot token malformed (expected <bot_id>:<secret>)");
+      return {
+        ok: false,
+        info: "Invalid bot token format — TELEGRAM_BOT_TOKEN must be <bot_id>:<secret> (e.g. 123456789:AA...). The numeric id before the colon appears to be missing; set the FULL token from BotFather in Render.",
       };
     }
     return tgSendMessage(
