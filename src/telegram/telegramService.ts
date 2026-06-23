@@ -173,6 +173,19 @@ export class TelegramService {
     };
   }
 
+  /** Parses an inbound text message (command) from a webhook body, if present. */
+  parseMessage(body: unknown): { chatId: string; text: string } | null {
+    const update = body as TelegramUpdate;
+    const m = update?.message;
+    if (!m || typeof m.text !== "string" || m.text.trim() === "") return null;
+    return { chatId: String(m.chat.id), text: m.text };
+  }
+
+  /** True only for the single configured (authorized) chat id. */
+  isAuthorized(chatId: string): boolean {
+    return this.chatId.length > 0 && chatId === this.chatId;
+  }
+
   /** Parses an inbound webhook body into a TelegramCallback, if it is one. */
   parseCallback(body: unknown): TelegramCallback | null {
     const update = body as TelegramUpdate;
@@ -256,7 +269,7 @@ interface TgMessage {
   chat: TgChat;
 }
 interface TelegramUpdate {
-  message?: { chat: TgChat };
+  message?: { chat: TgChat; text?: string };
   my_chat_member?: { chat: TgChat };
   callback_query?: {
     id: string;
