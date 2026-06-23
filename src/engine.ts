@@ -335,13 +335,174 @@ export class AvrrioEngine {
   telegramSetWebhook(url: string) {
     return this.telegram.setWebhook(url);
   }
-  /** Process an inbound Telegram webhook (button press). */
+  /** Process an inbound Telegram webhook: button presses AND text commands. */
   async handleTelegramWebhook(body: unknown): Promise<void> {
     const cb = this.telegram.parseCallback(body);
-    if (!cb) return;
-    await this.telegram.handleCallback(cb, (action, ref) =>
-      this.approvalAction(action, ref),
+    if (cb) {
+      await this.telegram.handleCallback(cb, (action, ref) =>
+        this.approvalAction(action, ref),
+      );
+      return;
+    }
+    const msg = this.telegram.parseMessage(body);
+    if (msg) await this.handleTelegramCommand(msg.chatId, msg.text);
+  }
+
+  /**
+   * Routes a Telegram text command. Authorized by chat id. Advisory by default —
+   * only /approve, /reject, /stop, /resume change state, and each runs through
+   * the existing safety gates. Never executes a trade from free-form chat.
+   */
+  async handleTelegramCommand(chatId: string, text: string): Promise<string> {
+    if (!this.telegram.isAuthorized(chatId)) {
+      await this.audit.log("telegram.command_unauthorized", chatId, {
+        text: text.slice(0, 40),
+      });
+      return "unauthorized";
+    }
+    const parts = text.trim().split(/\s+/);
+    const cmd = (parts[0] ?? "").toLowerCase();
+    const arg = parts.slice(1).join(" ").trim();
+    await this.audit.log("telegram.command", "telegram", {
+      command: cmd,
+      hasArg: arg.length > 0,
+    });
+
+    let reply: string;
+    switch (cmd) {
+      case "/scan_now":
+        reply = await this.cmdScanNow();
+        break;
+      case "/why_no_trade":
+        reply = await this.scanExplanation();
+        break;
+      case "/status":
+        reply = await this.cmdStatus();
+        break;
+      case "/ask":
+        reply = arg
+          ? await this.claude.ask(arg, await this.askContext())
+          : "Usage: /ask <your question>";
+        break;
+      case "/approve":
+        reply = arg
+          ? await this.approvalAction("approve", arg)
+          : "Usage: /approve <trade id>";
+        break;
+      case "/reject":
+        reply = arg
+          ? await this.approvalAction("reject", arg)
+          : "Usage: /reject <trade id>";
+        break;
+      case "/stop":
+        await this.engageKill("Telegram /stop", "telegram");
+        reply = "🛑 Emergency Stop ENGAGED. All trading is blocked. Reply /resume confirm to clear.";
+        break;
+      case "/resume":
+        reply = await this.cmdResume(arg);
+        break;
+      case "/help":
+      case "/start":
+        reply = TELEGRAM_HELP;
+        break;
+      default:
+        reply = `Unknown command "${cmd}".\n\n${TELEGRAM_HELP}`;
+    }
+    await this.telegram.sendText(reply);
+    return reply;
+  }
+
+  private async cmdScanNow(): Promise<string> {
+    const r = await this.scheduler.runScanCycle();
+    if (r.alerted > 0) {
+      return `🔍 Scan complete — ${r.alerted} alert(s) sent: ${r.refs.join(", ")}. Approve from the alert buttons or /approve <id>.`;
+    }
+    return `🔍 Scan complete — no qualifying setup.\n\n${await this.scanExplanation()}`;
+  }
+
+  private async cmdStatus(): Promise<string> {
+    const s = this.client.status();
+    const sched = this.scheduler.stats();
+    return [
+      "📊 AVRRIO STATUS",
+      `Mode: ${this.getTradingMode()} · Trading: ${this.isLiveTradingEnabled() ? "LIVE" : "paper"}`,
+      `TopstepX: ${s.connected ? "connected" : "not connected"} (${s.accountStatus}) · Acct ${s.accountId}`,
+      `Buying power: $${(s.availableBuyingPower || 0).toLocaleString()} · Day P&L: ${s.dailyPnL >= 0 ? "+" : ""}$${(s.dailyPnL || 0).toLocaleString()}`,
+      `Open positions: ${s.openPositions}`,
+      `Kill switch: ${this.killSwitch.isEngaged() ? "ENGAGED 🛑" : "clear"}`,
+      `Scheduler: ${sched.enabled ? "ON" : "off"} (every ${sched.intervalMinutes}m) · scans today ${sched.scansToday}`,
+      `Pending approvals: ${this.recommendations.pending().length}`,
+    ].join("\n");
+  }
+
+  private async cmdResume(arg: string): Promise<string> {
+    if (arg.toLowerCase() !== "confirm") {
+      return "⚠️ Reply '/resume confirm' to clear the Emergency Stop.";
+    }
+    const ok = await this.disengageKill("telegram");
+    return ok
+      ? "✅ Emergency Stop cleared. Trading can resume — every trade still requires your approval."
+      : "⚠️ Could not clear the Emergency Stop (it may be forced by the KILL_SWITCH env var).";
+  }
+
+  /** Secret-free context string passed to Claude for /ask. */
+  private async askContext(): Promise<string> {
+    const s = this.client.status();
+    return [
+      "Context for the Avrrio Trade AI assistant (advisory only):",
+      `Trading mode: ${this.getTradingMode()} · ${this.isLiveTradingEnabled() ? "LIVE" : "paper"}.`,
+      `TopstepX: ${s.connected ? "connected" : "not connected"}, account ${s.accountId}, day P&L $${s.dailyPnL}, buying power $${s.availableBuyingPower}.`,
+      `Emergency Stop: ${this.killSwitch.isEngaged() ? "engaged" : "clear"}. Pending approvals: ${this.recommendations.pending().length}.`,
+    ].join("\n");
+  }
+
+  /**
+   * Explains the latest scan: which filters each top symbol failed and the
+   * global gates. Read-only. Covers score, reward/risk, tradability, direction,
+   * news, emergency stop, daily-loss budget, and duplicate positions.
+   */
+  async scanExplanation(): Promise<string> {
+    const minScore = this.config.notifications.opportunityAlertScore;
+    const minRR = this.config.scheduler.minRewardRisk;
+    const results = await this.scan({ limit: 12 });
+    const lines = [
+      "🤔 WHY NO TRADE",
+      `Filters: Avrrio score ≥ ${minScore}, reward/risk ≥ ${minRR}, futures only.`,
+      `Emergency Stop: ${this.killSwitch.isEngaged() ? "ENGAGED — all trades blocked 🛑" : "clear"}`,
+    ];
+    try {
+      const a = await this.getAccount();
+      const lossUsed = Math.max(0, -a.dayPnl);
+      const remaining = a.rules.maxDailyLoss - lossUsed;
+      lines.push(
+        `Daily-loss budget: day P&L ${a.dayPnl >= 0 ? "+" : ""}$${a.dayPnl}, $${remaining.toFixed(0)} of $${a.rules.maxDailyLoss} remaining.`,
+      );
+    } catch {
+      /* account snapshot optional */
+    }
+    const top = results.slice(0, 5);
+    lines.push("", "Top scanned symbols:");
+    for (const r of top) {
+      const why: string[] = [];
+      if (!r.tradable) why.push("watchlist-only (not futures)");
+      if (r.score < minScore) why.push(`score ${r.score}<${minScore}`);
+      if (r.direction !== "bullish" && r.direction !== "bearish")
+        why.push(`no clear direction (${r.direction})`);
+      if (r.newsBlocked) why.push("news blackout");
+      if (this.recommendations.hasOpenDuplicate(
+        r.symbol,
+        r.direction === "bearish" ? "short" : "long",
+      ))
+        why.push("duplicate open position");
+      lines.push(
+        `• ${r.symbol} — score ${r.score}, ${r.direction}${why.length ? " — " + why.join(", ") : " — qualifies (R:R & approval checked next)"}`,
+      );
+    }
+    lines.push(
+      "",
+      "Note: a qualifying setup still needs your approval; AI consensus and the full risk stack run at approval time.",
     );
+    return lines.join("\n");
   }
 
   /** Sends the 🚨 signal SMS with YES/NO reply instructions, and audits it. */
@@ -1095,6 +1256,18 @@ export class AvrrioEngine {
     return { assessment, analysis, account };
   }
 }
+
+const TELEGRAM_HELP = [
+  "🤖 Avrrio Trade AI — commands",
+  "/scan_now — run a scan now; alerts if a setup qualifies, else explains why",
+  "/why_no_trade — why nothing qualified in the latest scan",
+  "/status — mode, account, buying power, day P&L, positions, kill switch, scheduler",
+  "/ask <question> — ask the AI about the current setup (advisory only; cannot trade)",
+  "/approve <id> — approve a pending trade (runs all risk checks)",
+  "/reject <id> — reject a pending trade",
+  "/stop — engage Emergency Stop (blocks everything)",
+  "/resume confirm — clear Emergency Stop",
+].join("\n");
 
 /** Current hour (0-23) in the given IANA timezone; falls back to server local. */
 export function localHour(timezone: string): number {

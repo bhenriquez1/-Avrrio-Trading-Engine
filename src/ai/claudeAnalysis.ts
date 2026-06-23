@@ -50,7 +50,41 @@ export class ClaudeAnalysisService {
 
     return parseAnalysis(text, snapshot);
   }
+
+  /**
+   * Conversational, advisory-only answer to a free-form question with the
+   * supplied (secret-free) context. NEVER places, approves, or modifies trades.
+   */
+  async ask(question: string, context: string): Promise<string> {
+    if (!this.client) {
+      return "Claude is offline (no ANTHROPIC_API_KEY set). I can still run /scan_now, /status, and route /approve · /reject — set the key for conversational answers.";
+    }
+    try {
+      const response = await this.client.messages.create({
+        model: this.config.ai.claudeModel,
+        max_tokens: 700,
+        system: ASK_SYSTEM_PROMPT,
+        messages: [
+          { role: "user", content: `${context}\n\nQuestion: ${question}` },
+        ],
+      });
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("\n")
+        .trim();
+      return text || "(no answer)";
+    } catch (err) {
+      return `Could not reach Claude: ${err instanceof Error ? err.message : "error"}`;
+    }
+  }
 }
+
+const ASK_SYSTEM_PROMPT = `You are Avrrio Trade AI's advisory assistant, answering the operator over Telegram.
+Answer conversationally and concisely (a few sentences) using ONLY the provided context.
+You are ADVISORY ONLY: you cannot place, approve, modify, or cancel trades. If asked to trade,
+explain that the operator must approve via the dashboard or the Telegram approve buttons.
+Never reveal API keys, tokens, passwords, or other secrets.`;
 
 const SYSTEM_PROMPT = `You are Avrrio Trade AI, a disciplined futures trading analyst and risk manager.
 Your priority is capital preservation and rule compliance, not maximizing trade frequency.
