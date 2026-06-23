@@ -13,6 +13,8 @@ import type { AccountSummary, ClaudeAnalysis } from "../types.js";
  */
 export class ClaudeAnalysisService {
   private readonly client: Anthropic | null;
+  private lastSuccessAt: string | null = null;
+  private lastError: string | null = null;
 
   constructor(private readonly config: AvrrioConfig) {
     this.client = config.ai.anthropicApiKey
@@ -24,31 +26,69 @@ export class ClaudeAnalysisService {
     return this.client !== null;
   }
 
+  /** AI assistant health for the dashboard/diagnostics (no secrets). */
+  health(): {
+    status: "online" | "offline";
+    enabled: boolean;
+    model: string;
+    lastSuccessAt: string | null;
+    lastError: string | null;
+  } {
+    return {
+      status: this.client ? "online" : "offline",
+      enabled: this.client !== null,
+      model: this.config.ai.claudeModel,
+      lastSuccessAt: this.lastSuccessAt,
+      lastError: this.client
+        ? this.lastError
+        : "ANTHROPIC_API_KEY not set — running offline stub.",
+    };
+  }
+
+  private noteSuccess(): void {
+    this.lastSuccessAt = new Date().toISOString();
+    this.lastError = null;
+  }
+  private noteError(err: unknown): void {
+    this.lastError = err instanceof Error ? err.message : String(err);
+  }
+
   async analyze(
     snapshot: MarketSnapshot,
     account: AccountSummary,
   ): Promise<ClaudeAnalysis> {
     if (!this.client) return offlineAnalysis(snapshot);
 
-    const response = await this.client.messages.create({
-      model: this.config.ai.claudeModel,
-      max_tokens: 1024,
-      thinking: { type: "adaptive" },
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: buildPrompt(snapshot, account),
-        },
-      ],
-    });
+    try {
+      const response = await this.client.messages.create({
+        model: this.config.ai.claudeModel,
+        max_tokens: 1024,
+        thinking: { type: "adaptive" },
+        system: SYSTEM_PROMPT,
+        messages: [
+          {
+            role: "user",
+            content: buildPrompt(snapshot, account),
+          },
+        ],
+      });
 
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("\n");
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
 
-    return parseAnalysis(text, snapshot);
+      this.noteSuccess();
+      return parseAnalysis(text, snapshot);
+    } catch (err) {
+      this.noteError(err);
+      return {
+        recommendation: "no-trade",
+        confidence: 0,
+        summary: `Claude request failed: ${err instanceof Error ? err.message : "error"}. Defaulting to no-trade.`,
+        fromModel: false,
+      };
+    }
   }
 
   /**
@@ -73,8 +113,10 @@ export class ClaudeAnalysisService {
         .map((b) => b.text)
         .join("\n")
         .trim();
+      this.noteSuccess();
       return text || "(no answer)";
     } catch (err) {
+      this.noteError(err);
       return `Could not reach Claude: ${err instanceof Error ? err.message : "error"}`;
     }
   }

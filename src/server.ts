@@ -80,6 +80,7 @@ async function start() {
         topstepx: engine.topstepxStatus(),
         liveTradingChecklist: await engine.liveTradingChecklist(false),
         providers: engine.consensus.availableProviders(),
+        ai: engine.aiHealth(),
         newsEnabled: engine.news.enabled,
         notifications: {
           enabled: engine.notifications.enabled,
@@ -283,6 +284,9 @@ async function start() {
     "/api/settings/live-checklist",
     wrap(async (_req, res) => res.json(await engine.liveTradingChecklist(false))),
   );
+
+  // AI assistant health (read-only): status, model, last success, last error.
+  app.get("/api/ai-health", (_req, res) => res.json(engine.aiHealth()));
 
   // --- safety validation phase: readiness report + reset ---------------
   // Consolidated readiness report (read-only; re-checks auth live).

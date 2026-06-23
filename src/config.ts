@@ -205,7 +205,7 @@ export function loadConfig(): AvrrioConfig {
     },
     scheduler: {
       enabled: bool("SCHEDULED_SCANNER_ENABLED", false),
-      intervalMinutes: num("SCAN_INTERVAL_MINUTES", 20),
+      intervalMinutes: num("SCAN_INTERVAL_MINUTES", 5),
       minRewardRisk: num("AVRRIO_MIN_RR", 2),
       maxAlerts: num("AVRRIO_MAX_ALERTS", 3),
       dailySummaryHour: num("DAILY_SUMMARY_HOUR", -1),

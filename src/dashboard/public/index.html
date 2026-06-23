@@ -212,6 +212,8 @@
         if (t.usingFallbackData) showError("TopstepX market data unavailable — scans are using SIMULATED data. Fix the connection (Auth test).");
         if (s.notifications && s.notifications.smsEnabled && s.notifications.smsMissing && s.notifications.smsMissing.length) showError("SMS not configured — missing: " + s.notifications.smsMissing.join(", "));
         if (s.notifications && !s.notifications.telegramEnabled && s.notifications.telegramMissing && s.notifications.telegramMissing.length) showError("Telegram not active — missing/unset: " + s.notifications.telegramMissing.join(", ") + " (use 'Telegram chat ID' for details).");
+        if (s.ai && s.ai.status === "offline") showError("AI assistant OFFLINE — set ANTHROPIC_API_KEY (and OPENAI_API_KEY for consensus). /ask and AI reasoning won't work until then.");
+        else if (s.ai && s.ai.lastError) showError("AI assistant last error: " + String(s.ai.lastError).slice(0, 80));
         $("account").innerHTML = `
           <div class="card"><h2>Account</h2><div>${a ? a.name : "—"}</div></div>
           <div class="card"><h2>Balance</h2><div class="big">${a ? "$"+a.balance.toLocaleString() : "—"}</div></div>
@@ -225,6 +227,7 @@
             <div class="tag">Account ID ${t.accountId || "—"} · Buying power $${(t.availableBuyingPower||0).toLocaleString()} · Daily P&amp;L $${(t.dailyPnL||0).toLocaleString()} · Open positions ${t.openPositions||0}</div>
             <div class="tag">Last sync: ${t.lastSyncTime ? new Date(t.lastSyncTime).toLocaleTimeString() : "never"}</div>
             <div class="tag">Claude analysis: <b style="color:${claudeOn ? "var(--ok)" : "var(--warn)"}">${claudeOn ? "enabled" : "disabled"}</b> · Alerts: <b>${s.notifications.primaryChannel}</b> · SMS: <b>${s.notifications.smsEnabled ? "enabled" : "disabled"}</b></div>
+            ${s.ai ? `<div class="tag">AI assistant: <b style="color:${s.ai.status === "online" ? "var(--ok)" : "var(--block)"}">${s.ai.status}</b> · model ${s.ai.model} · last ok ${s.ai.lastSuccessAt ? new Date(s.ai.lastSuccessAt).toLocaleTimeString() : "—"}${s.ai.lastError ? ` · last error: ${String(s.ai.lastError).slice(0, 60)}` : ""}</div>` : ""}
             ${renderLiveChecklist(s.liveTradingChecklist)}
             <div class="actions" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
               <button style="width:auto;padding:5px 10px" class="${t.connected ? "btn-danger" : "btn-ok"}" onclick="topstepx('${t.connected ? "disconnect" : "connect"}')">${t.connected ? "Disconnect" : "Connect"}</button>
