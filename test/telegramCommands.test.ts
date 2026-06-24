@@ -61,6 +61,7 @@ test("/stop engages emergency stop; /resume needs confirm", async () => {
   // With confirm, it clears.
   await engine.handleTelegramCommand("999", "/resume confirm");
   assert.equal(engine.killSwitch.isEngaged(), false);
+  engine.scheduler.stop(); // /resume restarts the scanner timer — clear it
 });
 
 test("/ask is advisory only and never trades (offline stub)", async () => {
@@ -79,4 +80,40 @@ test("/approve and /reject require a trade id", async () => {
   const { engine } = await tempEngine();
   assert.match(await engine.handleTelegramCommand("999", "/approve"), /Usage: \/approve/);
   assert.match(await engine.handleTelegramCommand("999", "/reject"), /Usage: \/reject/);
+});
+
+test("new commands respond (scan/why/diag/last_signal/risk/settings/pause)", async () => {
+  const { engine } = await tempEngine();
+  assert.match(await engine.handleTelegramCommand("999", "/diag"), /PIPELINE DIAGNOSTICS/);
+  assert.match(await engine.handleTelegramCommand("999", "/last_signal"), /LAST SIGNAL/);
+  assert.match(await engine.handleTelegramCommand("999", "/risk"), /RISK LIMITS/);
+  assert.match(await engine.handleTelegramCommand("999", "/settings"), /SETTINGS/);
+  assert.match(await engine.handleTelegramCommand("999", "/why"), /WHY NO TRADE/);
+  // /scan runs a cycle and reports (demo data: no qualifying setup).
+  assert.match(await engine.handleTelegramCommand("999", "/scan now"), /Scan complete/);
+});
+
+test("/pause then /resume toggles the scanner", async () => {
+  const { engine } = await tempEngine();
+  assert.match(await engine.handleTelegramCommand("999", "/pause"), /paused/i);
+  assert.equal(engine.scheduler.enabled, false);
+  assert.match(await engine.handleTelegramCommand("999", "/resume"), /resumed/i);
+  assert.equal(engine.scheduler.enabled, true);
+  engine.scheduler.stop(); // clear the setInterval so the test process can exit
+});
+
+test("plain (non-slash) text is routed to the AI assistant (advisory)", async () => {
+  const { engine } = await tempEngine();
+  const r = await engine.handleTelegramCommand("999", "Why no trade right now?");
+  // No ANTHROPIC_API_KEY in tests -> advisory offline stub, never trades.
+  assert.match(r, /offline|advisory|Claude/i);
+});
+
+test("pipelineDiagnostics reports the key pipeline stages", async () => {
+  const { engine } = await tempEngine();
+  const d = engine.pipelineDiagnostics();
+  assert.ok("scheduler" in d && "telegram" in d && "ai" in d && "topstepx" in d);
+  assert.equal(typeof d.scheduler.intervalMinutes, "number");
+  assert.equal(d.trading.paper, !d.trading.liveTrading);
+  assert.match(d.process, /scheduler runs in-process/i);
 });

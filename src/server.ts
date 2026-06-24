@@ -288,6 +288,9 @@ async function start() {
   // AI assistant health (read-only): status, model, last success, last error.
   app.get("/api/ai-health", (_req, res) => res.json(engine.aiHealth()));
 
+  // Full pipeline diagnostics (read-only): scheduler/telegram/AI/topstepx/last scan.
+  app.get("/api/diagnostics", (_req, res) => res.json(engine.pipelineDiagnostics()));
+
   // --- safety validation phase: readiness report + reset ---------------
   // Consolidated readiness report (read-only; re-checks auth live).
   app.get(

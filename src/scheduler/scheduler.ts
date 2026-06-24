@@ -12,6 +12,17 @@ export interface ScanCycleResult {
   refs: string[];
 }
 
+/** Summary of the most recent scan, for /why and /last_signal. */
+export interface LastScanSummary {
+  time: string;
+  scanned: number;
+  qualifying: number;
+  alerted: number;
+  refs: string[];
+  /** Plain-language reasons nothing (more) qualified. */
+  reasons: string[];
+}
+
 /**
  * Scheduled opportunity scanner. Every N minutes it scans the universe, scores
  * each symbol, and alerts ONLY on high-quality, tradable futures setups:
@@ -32,6 +43,7 @@ export class Scheduler {
   private summaryDay = ""; // YYYY-MM-DD the summary was last sent
   private lastScanTime: string | null = null;
   private lastAlertTime: string | null = null;
+  private lastSummary: LastScanSummary | null = null;
   /** Keys "YYYY-MM-DD:HH" already reported, so each slot fires once per day. */
   private readonly reportsSent = new Set<string>();
   private readonly minScore: number;
@@ -113,21 +125,41 @@ export class Scheduler {
     }
     this.scansToday++;
     this.lastScanTime = new Date().toISOString();
+    this.engine.stage("SCAN_STARTED", { interval: this.intervalMinutes });
     await this.engine.audit.log("scan.started", "system", {
       intervalMinutes: this.intervalMinutes,
       minScore: this.minScore,
       minRewardRisk: this.config.scheduler.minRewardRisk,
     });
     const results = await this.engine.scan({ limit: 12 });
+    this.engine.stage("MARKET_DATA_FETCHED", { symbols: results.length });
     const minRR = this.config.scheduler.minRewardRisk;
+    const reasons = new Set<string>();
 
     // Qualify: tradable (futures only), strong score, clear direction.
-    const candidates = results.filter(
-      (r) =>
-        r.tradable &&
-        r.score >= this.minScore &&
-        (r.direction === "bullish" || r.direction === "bearish"),
-    );
+    const candidates = results.filter((r) => {
+      if (!r.tradable) {
+        reasons.add("watchlist-only symbol (futures only)");
+        return false;
+      }
+      if (r.score < this.minScore) {
+        reasons.add(`Avrrio score below threshold (${this.minScore})`);
+        return false;
+      }
+      if (r.direction !== "bullish" && r.direction !== "bearish") {
+        reasons.add("trend/direction not aligned");
+        return false;
+      }
+      if (r.newsBlocked) {
+        reasons.add("news risk (blackout window)");
+        return false;
+      }
+      return true;
+    });
+    this.engine.stage("SETUP_EVALUATED", {
+      scanned: results.length,
+      qualifying: candidates.length,
+    });
 
     const refs: string[] = [];
     let alerted = 0;
@@ -139,7 +171,10 @@ export class Scheduler {
       const rr =
         Math.abs(levels.target - levels.entry) /
         Math.max(1e-9, Math.abs(levels.entry - levels.stopLoss));
-      if (rr < minRR) continue;
+      if (rr < minRR) {
+        reasons.add(`reward/risk below ${minRR}:1`);
+        continue;
+      }
 
       const rec = await this.engine.propose({
         symbol: r.symbol,
@@ -153,6 +188,7 @@ export class Scheduler {
         alerted++;
         refs.push(rec.ref);
         this.lastAlertTime = new Date().toISOString();
+        this.engine.stage("TRADE_APPROVED", { ref: rec.ref, symbol: rec.symbol, side });
         await this.engine.audit.log("scheduler.alert", "system", {
           ref: rec.ref,
           symbol: rec.symbol,
@@ -160,8 +196,24 @@ export class Scheduler {
           score: r.score,
           rewardRisk: Number(rr.toFixed(2)),
         });
+      } else {
+        // Risk stack blocked it — capture why (e.g. daily-loss, position size).
+        const rule = rec.violations?.map((v) => v.rule).join(", ") || rec.status;
+        reasons.add(`risk check blocked ${r.symbol} (${rule})`);
+        this.engine.stage("TRADE_REJECTED", { symbol: r.symbol, reason: rule });
       }
     }
+
+    const reasonList = [...reasons];
+    if (alerted === 0 && reasonList.length === 0) reasonList.push("no valid setup");
+    this.lastSummary = {
+      time: this.lastScanTime,
+      scanned: results.length,
+      qualifying: candidates.length,
+      alerted,
+      refs,
+      reasons: reasonList,
+    };
 
     // Record the outcome so the audit log shows the scheduler ran even when
     // nothing qualified (no Telegram message is sent in that case).
@@ -175,6 +227,7 @@ export class Scheduler {
       await this.engine.audit.log("no_qualified_setups", "system", {
         scanned: results.length,
         qualifying: candidates.length,
+        reasons: reasonList,
       });
     }
 
@@ -184,6 +237,11 @@ export class Scheduler {
       alerted,
       refs,
     };
+  }
+
+  /** Most recent scan summary (counts + no-trade reasons), if any. */
+  lastScan(): LastScanSummary | null {
+    return this.lastSummary;
   }
 
   private async maybeDailySummary(): Promise<void> {

@@ -97,8 +97,10 @@ export class ClaudeAnalysisService {
    */
   async ask(question: string, context: string): Promise<string> {
     if (!this.client) {
+      console.log("[avrrio] CLAUDE_ASSISTANT_FAILED { reason: 'ANTHROPIC_API_KEY not set' }");
       return "Claude is offline (no ANTHROPIC_API_KEY set). I can still run /scan_now, /status, and route /approve · /reject — set the key for conversational answers.";
     }
+    console.log(`[avrrio] CLAUDE_ASSISTANT_STARTED { model: '${this.config.ai.claudeModel}' }`);
     try {
       const response = await this.client.messages.create({
         model: this.config.ai.claudeModel,
@@ -117,6 +119,7 @@ export class ClaudeAnalysisService {
       return text || "(no answer)";
     } catch (err) {
       this.noteError(err);
+      console.log(`[avrrio] CLAUDE_ASSISTANT_FAILED { error: ${JSON.stringify(err instanceof Error ? err.message : "error")} }`);
       return `Could not reach Claude: ${err instanceof Error ? err.message : "error"}`;
     }
   }

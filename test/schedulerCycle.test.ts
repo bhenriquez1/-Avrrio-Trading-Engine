@@ -51,6 +51,7 @@ function makeEngine(results: ScanResult[]) {
       return { ref: `T-${++refCounter}`, status: "pending" } as Recommendation;
     },
     audit: { async log(type: string) { events.push(type); } },
+    stage() {},
   } as unknown as AvrrioEngine;
   return { engine, proposed, events };
 }

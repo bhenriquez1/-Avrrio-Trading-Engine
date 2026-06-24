@@ -250,6 +250,12 @@ export function formatAlert(rec: Recommendation): string {
     `Risk/Reward: ${rr}`,
     `Confidence: ${(rec.consensus.confidence * 100).toFixed(0)}%`,
     `Avrrio Score: ${rec.avrrioScore ?? "n/a"}`,
+    "",
+    `Setup: ${rec.setupName ?? "scanner signal"}`,
+    `Why allowed: ${rec.riskApproved ? "risk checks passed" : "see review"} · news ${rec.news?.blocked ? "BLOCKED" : "clear"} · consensus ${rec.consensus.recommendation}`,
+    ...(rec.violations && rec.violations.length
+      ? [`Notes: ${rec.violations.map((v) => v.message).join("; ")}`]
+      : []),
   ].join("\n");
 }
 
