@@ -181,6 +181,77 @@ export class AvrrioEngine {
     };
   }
 
+  /**
+   * Full pipeline diagnostics — answers "is the scan→alert→assistant pipeline
+   * connected end to end?" Read-only, no secrets.
+   */
+  pipelineDiagnostics() {
+    const sched = this.scheduler.stats();
+    const ai = this.aiHealth();
+    const s = this.client.status();
+    return {
+      scheduler: {
+        running: sched.enabled,
+        intervalMinutes: sched.intervalMinutes,
+        scansToday: sched.scansToday,
+        lastScanTime: sched.lastScanTime,
+        lastAlertTime: sched.lastAlertTime,
+      },
+      telegram: {
+        configured: this.telegram.enabled,
+        missing: this.telegram.missing(),
+        presence: this.telegram.presence(),
+      },
+      ai: {
+        status: ai.status,
+        model: ai.model,
+        lastSuccessAt: ai.lastSuccessAt,
+        lastError: ai.lastError,
+        providers: ai.providers,
+      },
+      trading: {
+        mode: this.getTradingMode(),
+        liveTrading: this.isLiveTradingEnabled(),
+        paper: !this.isLiveTradingEnabled(),
+      },
+      safety: { emergencyStop: this.killSwitch.isEngaged() },
+      topstepx: {
+        connected: s.connected,
+        authenticated: s.authenticated,
+        accountId: s.accountId,
+        accountStatus: s.accountStatus,
+      },
+      lastScan: this.scheduler.lastScan(),
+      process:
+        "Single web process — the scheduler runs in-process via setInterval; no separate worker is required.",
+    };
+  }
+
+  /** Telegram-friendly diagnostics text for /diag. */
+  pipelineDiagnosticsText(): string {
+    const d = this.pipelineDiagnostics();
+    const yn = (b: boolean) => (b ? "✅" : "❌");
+    const lines = [
+      "🩺 AVRRIO PIPELINE DIAGNOSTICS",
+      `${yn(d.scheduler.running)} Scheduler running — every ${d.scheduler.intervalMinutes}m · scans today ${d.scheduler.scansToday}`,
+      `   last scan ${d.scheduler.lastScanTime ? new Date(d.scheduler.lastScanTime).toLocaleTimeString() : "—"} · last alert ${d.scheduler.lastAlertTime ? new Date(d.scheduler.lastAlertTime).toLocaleTimeString() : "—"}`,
+      `${yn(d.telegram.configured)} Telegram configured${d.telegram.missing.length ? " — missing: " + d.telegram.missing.join(", ") : ""}`,
+      `${yn(d.ai.status === "online")} Claude/AI ${d.ai.status} (${d.ai.model})${d.ai.lastError ? " — " + String(d.ai.lastError).slice(0, 60) : ""} · providers: ${d.ai.providers.join("+") || "none"}`,
+      `${yn(d.topstepx.connected)} TopstepX ${d.topstepx.connected ? "connected" : "not connected"} · acct ${d.topstepx.accountId}`,
+      `Mode: ${d.trading.mode} · ${d.trading.liveTrading ? "LIVE" : "paper"} · Emergency Stop: ${d.safety.emergencyStop ? "ENGAGED 🛑" : "clear"}`,
+      d.process,
+    ];
+    if (d.lastScan) {
+      lines.push(
+        "",
+        `Last scan: ${d.lastScan.scanned} scanned, ${d.lastScan.qualifying} qualifying, ${d.lastScan.alerted} alerted.`,
+      );
+      if (d.lastScan.reasons.length)
+        lines.push("No-trade reasons: " + d.lastScan.reasons.join("; "));
+    }
+    return lines.join("\n");
+  }
+
   getAccount(): Promise<AccountSummary> {
     return this.client.getAccount();
   }
@@ -296,19 +367,37 @@ export class AvrrioEngine {
   }
 
   /**
+   * Visible pipeline stage log (shows in the host/Render logs) using the exact
+   * stage tokens, so the end-to-end scan→alert→assistant pipeline is traceable.
+   */
+  stage(name: string, details: Record<string, unknown> = {}): void {
+    try {
+      console.log(`[avrrio] ${name} ${JSON.stringify(details)}`);
+    } catch {
+      console.log(`[avrrio] ${name}`);
+    }
+  }
+
+  /**
    * Sends a trade alert to Telegram only. Telegram carries the full trade detail
    * plus one-tap APPROVE / REJECT / STOP ALL buttons. SMS remains disabled unless
    * an operator explicitly re-enables SMS endpoints for legacy use.
    */
   private async dispatchAlert(rec: Recommendation): Promise<void> {
     if (!this.telegram.enabled) {
+      this.stage("TELEGRAM_SEND_FAILED", { ref: rec.ref, reason: "telegram not configured" });
       await this.audit.log("telegram.alert_skipped", "system", {
         ref: rec.ref,
         info: "Telegram not configured; SMS fallback disabled.",
       });
       return;
     }
+    this.stage("TELEGRAM_SEND_STARTED", { ref: rec.ref, symbol: rec.symbol });
     const r = await this.telegram.sendAlert(rec);
+    this.stage(r.ok ? "TELEGRAM_SEND_SUCCESS" : "TELEGRAM_SEND_FAILED", {
+      ref: rec.ref,
+      info: r.info,
+    });
     await this.audit.log("telegram.alert_sent", "system", {
       ref: rec.ref,
       ok: r.ok,
@@ -375,9 +464,12 @@ export class AvrrioEngine {
       });
       return "unauthorized";
     }
-    const parts = text.trim().split(/\s+/);
-    const cmd = (parts[0] ?? "").toLowerCase();
-    const arg = parts.slice(1).join(" ").trim();
+    const trimmed = text.trim();
+    const isCommand = trimmed.startsWith("/");
+    const parts = trimmed.split(/\s+/);
+    // Plain (non-slash) text is treated as a conversational question to Claude.
+    const cmd = isCommand ? (parts[0] ?? "").toLowerCase() : "/ask";
+    const arg = isCommand ? parts.slice(1).join(" ").trim() : trimmed;
     await this.audit.log("telegram.command", "telegram", {
       command: cmd,
       hasArg: arg.length > 0,
@@ -385,19 +477,39 @@ export class AvrrioEngine {
 
     let reply: string;
     switch (cmd) {
+      case "/scan":
       case "/scan_now":
+      case "/scannow":
         reply = await this.cmdScanNow();
         break;
+      case "/why":
       case "/why_no_trade":
         reply = await this.scanExplanation();
         break;
       case "/status":
         reply = await this.cmdStatus();
         break;
+      case "/diag":
+      case "/diagnostics":
+        reply = this.pipelineDiagnosticsText();
+        break;
+      case "/last_signal":
+      case "/lastsignal":
+        reply = this.cmdLastSignal();
+        break;
+      case "/risk":
+        reply = await this.cmdRisk();
+        break;
+      case "/settings":
+        reply = this.cmdSettings();
+        break;
+      case "/pause":
+        reply = await this.cmdPauseScanner();
+        break;
       case "/ask":
         reply = arg
           ? await this.claude.ask(arg, await this.askContext())
-          : "Usage: /ask <your question>";
+          : "Usage: /ask <your question> — or just type your question.";
         break;
       case "/approve":
         reply = arg
@@ -427,6 +539,75 @@ export class AvrrioEngine {
     return reply;
   }
 
+  /** /last_signal — the most recent recommendation + last scan summary. */
+  private cmdLastSignal(): string {
+    const recs = this.recommendations.list();
+    const last = recs[recs.length - 1];
+    const scan = this.scheduler.lastScan();
+    const lines = ["📡 LAST SIGNAL"];
+    if (last) {
+      const rr = Math.abs(last.entry - last.stopLoss) > 0
+        ? (Math.abs(last.target - last.entry) / Math.abs(last.entry - last.stopLoss)).toFixed(1)
+        : "n/a";
+      lines.push(
+        `${last.ref}: ${last.symbol} ${last.side.toUpperCase()} ×${last.size} — ${last.status}`,
+        `Entry ${last.entry} · Stop ${last.stopLoss} · Target ${last.target} · R:R ${rr}`,
+        `Avrrio score ${last.avrrioScore ?? "n/a"} · created ${new Date(last.createdAt).toLocaleString()}`,
+      );
+    } else {
+      lines.push("No recommendations yet.");
+    }
+    if (scan) {
+      lines.push(
+        "",
+        `Last scan: ${scan.scanned} scanned, ${scan.qualifying} qualifying, ${scan.alerted} alerted.`,
+      );
+      if (scan.reasons.length) lines.push("No-trade reasons: " + scan.reasons.join("; "));
+    }
+    return lines.join("\n");
+  }
+
+  /** /risk — current risk limits and usage. */
+  private async cmdRisk(): Promise<string> {
+    const lines = [
+      "🛡️ RISK LIMITS",
+      `Max position size: ${this.config.safety.maxPositionSize || "—"} contracts`,
+      `Max risk/trade: $${this.config.safety.maxRiskPerTrade || 0}`,
+      `Max trades/day: ${this.config.safety.maxTradesPerDay} · taken today: ${this.recommendations.executedToday()}`,
+      `Internal daily-loss cap: $${this.config.safety.dailyMaxLoss || 0} (stricter of this and the broker limit applies)`,
+    ];
+    try {
+      const a = await this.getAccount();
+      const remaining = a.rules.maxDailyLoss - Math.max(0, -a.dayPnl);
+      lines.push(
+        `Broker daily loss: $${a.rules.maxDailyLoss} · day P&L ${a.dayPnl >= 0 ? "+" : ""}$${a.dayPnl} · $${remaining.toFixed(0)} remaining`,
+      );
+    } catch {
+      /* account optional */
+    }
+    lines.push(`Emergency Stop: ${this.killSwitch.isEngaged() ? "ENGAGED 🛑" : "clear"}`);
+    return lines.join("\n");
+  }
+
+  /** /settings — current operational settings. */
+  private cmdSettings(): string {
+    const sched = this.scheduler.stats();
+    return [
+      "⚙️ SETTINGS",
+      `Trading mode: ${this.getTradingMode()} · ${this.isLiveTradingEnabled() ? "LIVE" : "paper"}`,
+      `Scanner: ${sched.enabled ? "ON" : "off"} every ${sched.intervalMinutes}m`,
+      `Alert thresholds: Avrrio score ≥ ${this.config.notifications.opportunityAlertScore}, R:R ≥ ${this.config.scheduler.minRewardRisk}, max ${this.config.scheduler.maxAlerts}/cycle`,
+      `Report hours: ${this.config.scheduler.reportHours.join(", ") || "none"} · timezone: ${this.config.accountTimezone || "server local"}`,
+      `AI: ${this.aiHealth().status} (${this.aiHealth().model})`,
+    ].join("\n");
+  }
+
+  /** /pause — pause the scheduled scanner (no new scans/alerts until /resume). */
+  private async cmdPauseScanner(): Promise<string> {
+    await this.setScheduler(false, undefined, "telegram");
+    return "⏸️ Scanner paused. No new scans or alerts until /resume. (Trading approvals and safety controls are unaffected.)";
+  }
+
   private async cmdScanNow(): Promise<string> {
     const r = await this.scheduler.runScanCycle();
     if (r.alerted > 0) {
@@ -453,13 +634,23 @@ export class AvrrioEngine {
   }
 
   private async cmdResume(arg: string): Promise<string> {
-    if (arg.toLowerCase() !== "confirm") {
-      return "⚠️ Reply '/resume confirm' to clear the Emergency Stop.";
+    // Always resume the scanner.
+    await this.setScheduler(true, undefined, "telegram");
+    const lines = ["▶️ Scanner resumed."];
+    // If the Emergency Stop is engaged, only clear it on explicit confirm.
+    if (this.killSwitch.isEngaged()) {
+      if (arg.toLowerCase() === "confirm") {
+        const ok = await this.disengageKill("telegram");
+        lines.push(
+          ok
+            ? "✅ Emergency Stop cleared. Every trade still requires your approval."
+            : "⚠️ Could not clear the Emergency Stop (it may be forced by the KILL_SWITCH env var).",
+        );
+      } else {
+        lines.push("⚠️ Emergency Stop is still ENGAGED — reply '/resume confirm' to clear it.");
+      }
     }
-    const ok = await this.disengageKill("telegram");
-    return ok
-      ? "✅ Emergency Stop cleared. Trading can resume — every trade still requires your approval."
-      : "⚠️ Could not clear the Emergency Stop (it may be forced by the KILL_SWITCH env var).";
+    return lines.join("\n");
   }
 
   /** Secret-free context string passed to Claude for /ask. */
@@ -1276,14 +1467,17 @@ export class AvrrioEngine {
 
 const TELEGRAM_HELP = [
   "🤖 Avrrio Trade AI — commands",
-  "/scan_now — run a scan now; alerts if a setup qualifies, else explains why",
-  "/why_no_trade — why nothing qualified in the latest scan",
-  "/status — mode, account, buying power, day P&L, positions, kill switch, scheduler",
-  "/ask <question> — ask the AI about the current setup (advisory only; cannot trade)",
-  "/approve <id> — approve a pending trade (runs all risk checks)",
-  "/reject <id> — reject a pending trade",
-  "/stop — engage Emergency Stop (blocks everything)",
-  "/resume confirm — clear Emergency Stop",
+  "/scan (or /scan now) — run a scan now; alerts if a setup qualifies, else explains why",
+  "/why — why nothing qualified in the latest scan",
+  "/status — mode, account, P&L, positions, kill switch, scheduler, AI",
+  "/diag — full pipeline diagnostics (scheduler, Telegram, AI, TopstepX)",
+  "/last_signal — the most recent recommendation + last scan summary",
+  "/risk — risk limits and current usage",
+  "/settings — current mode, scanner cadence, thresholds, timezone",
+  "/ask <question> (or just type) — ask the AI; advisory only, cannot trade",
+  "/approve <id> · /reject <id> — act on a pending trade (full risk checks)",
+  "/pause · /resume — pause/resume the scanner",
+  "/stop — Emergency Stop · /resume confirm — clear it",
 ].join("\n");
 
 /** Current hour (0-23) in the given IANA timezone; falls back to server local. */
