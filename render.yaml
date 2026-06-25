@@ -8,7 +8,16 @@ services:
     buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
+    # Persistent disk so Avrrio Memory, recommendations, journal, settings, and
+    # the audit log survive redeploys (the default ./data is ephemeral on Render).
+    disk:
+      name: avrrio-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
+      # Point all file-backed state at the mounted disk above.
+      - key: DATA_DIR
+        value: /var/data
       # Safety flags default SAFE. Set explicitly to enable real trading.
       - key: LIVE_TRADING_ENABLED
         value: "false"
