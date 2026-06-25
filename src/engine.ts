@@ -17,7 +17,7 @@ import { TelegramService } from "./telegram/telegramService.js";
 import { RiskManager, type RiskContext } from "./risk/riskManager.js";
 import { pointValue } from "./risk/rules.js";
 import { RuntimeSettings } from "./settings/runtimeSettings.js";
-import { Scheduler } from "./scheduler/scheduler.js";
+import { Scheduler, type NearMiss } from "./scheduler/scheduler.js";
 import {
   Scanner,
   scoreSnapshot,
@@ -406,6 +406,29 @@ export class AvrrioEngine {
   }
 
   /**
+   * Sends a low-key "watch" alert for a setup that's close but not ready. This
+   * is informational only — it never proposes or executes a trade, and real
+   * trade alerts are still reserved for fully-qualified setups.
+   */
+  async sendWatchAlert(nm: NearMiss): Promise<void> {
+    this.stage("WATCH_ALERT", { symbol: nm.symbol, side: nm.side, score: nm.score });
+    if (!this.telegram.enabled) return;
+    const text = [
+      `👀 WATCH — ${nm.symbol} ${(nm.side ?? "").toUpperCase()}`,
+      `Avrrio score ${nm.score}${nm.rr != null ? ` · R:R ${nm.rr}` : ""} — close but not A+ yet.`,
+      `Not ready: ${nm.reasons.join("; ") || "—"}`,
+      "No action needed. You'll get a full alert only if it qualifies.",
+    ].join("\n");
+    const r = await this.telegram.sendText(text);
+    await this.audit.log("telegram.watch_alert", "system", {
+      symbol: nm.symbol,
+      side: nm.side,
+      score: nm.score,
+      ok: r.ok,
+    });
+  }
+
+  /**
    * Applies an approval action (from a Telegram button or elsewhere) through the
    * same safety gates as SMS approval. Returns the operator confirmation text.
    */
@@ -484,6 +507,7 @@ export class AvrrioEngine {
         break;
       case "/why":
       case "/why_no_trade":
+        await this.scheduler.runScanCycle(); // fresh scan, then explain
         reply = await this.scanExplanation();
         break;
       case "/status":
@@ -672,43 +696,55 @@ export class AvrrioEngine {
   async scanExplanation(): Promise<string> {
     const minScore = this.config.notifications.opportunityAlertScore;
     const minRR = this.config.scheduler.minRewardRisk;
-    const results = await this.scan({ limit: 12 });
+    // Read-only: explain the most recent scan. If none has run yet, run one
+    // (it never forces a trade). Callers wanting freshness run a cycle first.
+    if (!this.scheduler.lastScan()) await this.scheduler.runScanCycle();
+    const last = this.scheduler.lastScan();
     const lines = [
       "🤔 WHY NO TRADE",
-      `Filters: Avrrio score ≥ ${minScore}, reward/risk ≥ ${minRR}, futures only.`,
+      `Filters: Avrrio score ≥ ${minScore}, reward/risk ≥ ${minRR}, futures only. (Filters are intentionally strict — quality over activity.)`,
       `Emergency Stop: ${this.killSwitch.isEngaged() ? "ENGAGED — all trades blocked 🛑" : "clear"}`,
     ];
     try {
       const a = await this.getAccount();
-      const lossUsed = Math.max(0, -a.dayPnl);
-      const remaining = a.rules.maxDailyLoss - lossUsed;
+      const remaining = a.rules.maxDailyLoss - Math.max(0, -a.dayPnl);
       lines.push(
         `Daily-loss budget: day P&L ${a.dayPnl >= 0 ? "+" : ""}$${a.dayPnl}, $${remaining.toFixed(0)} of $${a.rules.maxDailyLoss} remaining.`,
       );
     } catch {
       /* account snapshot optional */
     }
-    const top = results.slice(0, 5);
-    lines.push("", "Top scanned symbols:");
-    for (const r of top) {
-      const why: string[] = [];
-      if (!r.tradable) why.push("watchlist-only (not futures)");
-      if (r.score < minScore) why.push(`score ${r.score}<${minScore}`);
-      if (r.direction !== "bullish" && r.direction !== "bearish")
-        why.push(`no clear direction (${r.direction})`);
-      if (r.newsBlocked) why.push("news blackout");
-      if (this.recommendations.hasOpenDuplicate(
-        r.symbol,
-        r.direction === "bearish" ? "short" : "long",
-      ))
-        why.push("duplicate open position");
+
+    if (last && last.alerted > 0) {
+      lines.push("", `✅ ${last.alerted} A+ setup(s) alerted: ${last.refs.join(", ")}.`);
+      return lines.join("\n");
+    }
+
+    const near = last?.nearMisses ?? [];
+    const tradableNear = near.filter((n) => n.tradable);
+    const watchlistNear = near.filter((n) => !n.tradable);
+
+    lines.push("", "No A+ setup right now.");
+    if (tradableNear.length) {
+      lines.push("Top near-miss setups:");
+      for (const n of tradableNear) {
+        lines.push(
+          `• ${n.symbol} ${(n.side ?? "").toUpperCase()} — score ${n.score}${n.rr != null ? `, R:R ${n.rr}` : ""} — needs: ${n.reasons.join(", ") || "—"}`,
+        );
+      }
+    }
+    if (watchlistNear.length) {
       lines.push(
-        `• ${r.symbol} — score ${r.score}, ${r.direction}${why.length ? " — " + why.join(", ") : " — qualifies (R:R & approval checked next)"}`,
+        "Closest watchlist candidates (analysis-only): " +
+          watchlistNear.map((n) => `${n.symbol} (score ${n.score})`).join(", "),
       );
+    }
+    if (!tradableNear.length && !watchlistNear.length) {
+      lines.push("Nothing close — market is quiet or filtered out.");
     }
     lines.push(
       "",
-      "Note: a qualifying setup still needs your approval; AI consensus and the full risk stack run at approval time.",
+      "Filters are not lowered to manufacture a trade. A qualifying setup still needs your approval; AI consensus + full risk stack run at approval time.",
     );
     return lines.join("\n");
   }
@@ -1222,6 +1258,25 @@ export class AvrrioEngine {
       lines.push(
         `• ${o.symbol} ${o.direction === "bullish" ? "LONG" : "SHORT"} — score ${o.score}/100`,
       );
+    }
+    // Near-miss feedback from the latest scan (quality over activity).
+    const near = this.scheduler.lastScan()?.nearMisses ?? [];
+    const tradableNear = near.filter((n) => n.tradable && n.side);
+    if (tradableNear.length) {
+      lines.push("", "Near-miss (not A+ yet):");
+      for (const n of tradableNear) {
+        lines.push(
+          `• ${n.symbol} ${(n.side ?? "").toUpperCase()} — score ${n.score}${n.rr != null ? `, R:R ${n.rr}` : ""} — needs: ${n.reasons.join(", ") || "—"}`,
+        );
+      }
+    } else if (!top.length) {
+      const watchlist = near.filter((n) => !n.tradable);
+      if (watchlist.length) {
+        lines.push(
+          "No A+ setup. Closest watchlist candidates: " +
+            watchlist.map((n) => `${n.symbol} (${n.score})`).join(", "),
+        );
+      }
     }
     return lines.join("\n");
   }

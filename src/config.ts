@@ -72,6 +72,10 @@ export interface AvrrioConfig {
     dailySummaryHour: number;
     /** Local hours (0-23) to send scheduled day reports (morning/midday/close). */
     reportHours: number[];
+    /** Score margin below the alert threshold that counts as a "watch" setup. */
+    watchMargin: number;
+    /** Send a (deduped) watch alert when a setup is close but not ready. */
+    watchAlertsEnabled: boolean;
   };
   /** Public base URL used to build approve/reject links in notifications. */
   publicBaseUrl: string;
@@ -210,6 +214,8 @@ export function loadConfig(): AvrrioConfig {
       maxAlerts: num("AVRRIO_MAX_ALERTS", 3),
       dailySummaryHour: num("DAILY_SUMMARY_HOUR", -1),
       reportHours: parseHours(env("REPORT_HOURS", "8,12,16")),
+      watchMargin: num("AVRRIO_WATCH_MARGIN", 5),
+      watchAlertsEnabled: bool("WATCH_ALERTS_ENABLED", true),
     },
     publicBaseUrl: env("PUBLIC_BASE_URL", "http://localhost:4317"),
     accountTimezone: env("ACCOUNT_TIMEZONE").trim(),
