@@ -16,6 +16,7 @@ import {
   type WhatIfResult,
 } from "./ai/tradeChat.js";
 import { buildDebate, type DebateResult } from "./ai/debate.js";
+import { coachReview, type CoachReview } from "./ai/tradeCoach.js";
 import { NewsReader } from "./news/newsReader.js";
 import { NotificationManager } from "./notifications/notifier.js";
 import { EmailNotifier } from "./notifications/emailNotifier.js";
@@ -363,7 +364,8 @@ export class AvrrioEngine {
 
     if (autoEligible) {
       // Semi-autonomous: every gate passed, execute now.
-      await this.executor.execute(rec, "system");
+      const result = await this.executor.execute(rec, "system");
+      if (result.accepted) void this.autoCoach(rec); // post-trade review
     } else if (rec.status === "pending") {
       // Manual/pre-approved: alert the operator so they can approve from a phone.
       await this.dispatchAlert(rec);
@@ -552,6 +554,10 @@ export class AvrrioEngine {
       case "/debate":
         reply = await this.cmdDebate(arg);
         break;
+      case "/coach":
+      case "/review":
+        reply = await this.cmdCoach(arg);
+        break;
       case "/approve":
         reply = arg
           ? await this.approvalAction("approve", arg)
@@ -654,6 +660,26 @@ export class AvrrioEngine {
     }
     const r = await this.debate(target);
     return r.interpretation ? `${r.summary}\n\n🧠 ${r.interpretation}` : r.summary;
+  }
+
+  /**
+   * /coach <T-ref> — post-trade review. Defaults to the latest signal when
+   * nothing is given.
+   */
+  private async cmdCoach(arg: string): Promise<string> {
+    let ref = arg.trim();
+    if (!ref) {
+      const recs = this.recommendations.list();
+      const latest = recs[recs.length - 1];
+      if (!latest) return "Usage: /coach <T-ref> — reviews a trade against your discipline rules.";
+      ref = latest.ref;
+    }
+    try {
+      const r = await this.coachTrade(ref);
+      return r.interpretation ? `${r.summary}\n\n🧠 ${r.interpretation}` : r.summary;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Could not review that trade.";
+    }
   }
 
   /**
@@ -887,6 +913,89 @@ export class AvrrioEngine {
   }
 
   /**
+   * Trade Coach: review a specific trade (by ref) against the operator's own
+   * discipline rules. Deterministic critique (works with no AI key); Claude, when
+   * enabled, adds a short coaching note. ADVISORY reflection only.
+   */
+  async coachTrade(ref: string): Promise<CoachReview & { interpretation?: string }> {
+    const rec = this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
+    if (!rec) throw new Error(`No recommendation found for "${ref}".`);
+    const review = await this.buildCoachReview(rec);
+    await this.audit.log("trade.coach", "operator", {
+      ref: rec.ref,
+      symbol: rec.symbol,
+      grade: review.grade,
+      critiques: review.critiques.length,
+    });
+    if (this.claude.enabled) {
+      const interpretation = await this.claude.ask(
+        "Give one short, encouraging coaching takeaway for next time. Do not invent numbers or add new critiques.",
+        [buildTradeContext(rec), "", "Coach review:", review.summary].join("\n"),
+      );
+      return { ...review, interpretation };
+    }
+    return review;
+  }
+
+  /** Assemble a coach review for a recommendation (pulls structure + outcome). */
+  private async buildCoachReview(rec: Recommendation): Promise<CoachReview> {
+    let structure: MarketSnapshot["structure"] | null = null;
+    let last: number | null = null;
+    try {
+      const snapshot = await this.snapshot(rec.symbol);
+      structure = snapshot.structure;
+      last = snapshot.quote.last;
+    } catch {
+      /* snapshot optional */
+    }
+    // Realized outcome, if this trade has been closed in the paper journal.
+    let outcome: { realizedPnl: number | null; paper: boolean } | null = null;
+    const closed = this.journal
+      .list()
+      .find((e) => e.symbol === rec.symbol && e.status === "closed" && e.realizedPnl != null);
+    if (closed) outcome = { realizedPnl: closed.realizedPnl ?? null, paper: true };
+
+    return coachReview({
+      ref: rec.ref,
+      symbol: rec.symbol,
+      side: rec.side,
+      entry: rec.entry,
+      stopLoss: rec.stopLoss,
+      target: rec.target,
+      rr: rec.rewardRiskRatio,
+      score: rec.avrrioScore,
+      consensus: rec.consensus,
+      news: rec.news,
+      overrodeConsensus: !this.consensusSupported(rec),
+      thresholds: {
+        minScore: this.config.notifications.opportunityAlertScore,
+        minRR: this.config.scheduler.minRewardRisk,
+      },
+      structure,
+      last,
+      outcome,
+    });
+  }
+
+  /**
+   * Fire-and-forget post-trade review: after a trade is taken, build the coach
+   * review and push it to Telegram. Never throws into the execution path.
+   */
+  private async autoCoach(rec: Recommendation): Promise<void> {
+    try {
+      const review = await this.buildCoachReview(rec);
+      await this.audit.log("trade.coach.auto", "system", {
+        ref: rec.ref,
+        symbol: rec.symbol,
+        grade: review.grade,
+      });
+      await this.broadcast(review.summary, "trade.coach");
+    } catch (err) {
+      console.error("autoCoach failed (non-fatal):", err);
+    }
+  }
+
+  /**
    * Explains the latest scan: which filters each top symbol failed and the
    * global gates. Read-only. Covers score, reward/risk, tradability, direction,
    * news, emergency stop, daily-loss budget, and duplicate positions.
@@ -1053,6 +1162,7 @@ export class AvrrioEngine {
 
     const result = await this.executor.execute(rec, actor);
     if (result.paper) await this.settings.markValidation("paperApprovalTestPassed");
+    if (result.accepted) void this.autoCoach(rec); // post-trade review
     return { mode, armed: false, result };
   }
 
@@ -1149,7 +1259,9 @@ export class AvrrioEngine {
       return undefined; // stay armed; will expire if conditions never clear
     }
 
-    return this.executor.execute(rec, "system(pre-approved)");
+    const result = await this.executor.execute(rec, "system(pre-approved)");
+    if (result.accepted) void this.autoCoach(rec); // post-trade review
+    return result;
   }
 
   async engageKill(reason: string, actor: string): Promise<void> {
@@ -1731,6 +1843,7 @@ const TELEGRAM_HELP = [
   "/discuss <T-ref> <question> — per-trade chat (e.g. why not buy now?)",
   "/whatif <T-ref> <scenario> — recompute R:R (e.g. move stop to 20010, one contract)",
   "/debate <T-ref|symbol> — Bull case vs Bear case + final verdict",
+  "/coach <T-ref> — post-trade review vs your discipline rules (auto-sent after each trade)",
   "/approve <id> · /reject <id> — act on a pending trade (full risk checks)",
   "/pause · /resume — pause/resume the scanner",
   "/stop — Emergency Stop · /resume confirm — clear it",

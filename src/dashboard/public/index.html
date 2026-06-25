@@ -412,6 +412,7 @@
                 </div>
                 <div class="chat-row">
                   <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="debate('${r.id}')">⚖️ Debate (Bull vs Bear)</button>
+                  <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="coach('${r.id}')">🧑‍🏫 Coach review</button>
                 </div>
               </div>
             </div>`;
@@ -587,6 +588,18 @@
         chatAppend(id, "ai", "…weighing both sides");
         try {
           const r = await api(`/api/recommendations/${id}/debate`, { method: "POST", body: JSON.stringify({}) }).then(j);
+          $(`chatlog-${id}`).lastChild.remove();
+          chatAppend(id, "ai", r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""));
+        } catch (e) {
+          $(`chatlog-${id}`).lastChild.remove();
+          chatAppend(id, "ai", "Error: " + e.message);
+        }
+      };
+      window.coach = async (id) => {
+        chatAppend(id, "you", "Review this trade (Coach)");
+        chatAppend(id, "ai", "…reviewing against your discipline rules");
+        try {
+          const r = await api(`/api/recommendations/${id}/coach`, { method: "POST", body: JSON.stringify({}) }).then(j);
           $(`chatlog-${id}`).lastChild.remove();
           chatAppend(id, "ai", r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""));
         } catch (e) {
