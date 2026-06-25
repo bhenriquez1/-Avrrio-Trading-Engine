@@ -17,6 +17,7 @@ import {
 } from "./ai/tradeChat.js";
 import { buildDebate, type DebateResult } from "./ai/debate.js";
 import { coachReview, type CoachReview } from "./ai/tradeCoach.js";
+import { TradeMemory, type MemoryAssessment } from "./memory/tradeMemory.js";
 import { NewsReader } from "./news/newsReader.js";
 import { NotificationManager } from "./notifications/notifier.js";
 import { EmailNotifier } from "./notifications/emailNotifier.js";
@@ -121,6 +122,7 @@ export class AvrrioEngine {
   readonly settings: RuntimeSettings;
   readonly scheduler: Scheduler;
   readonly auth: Auth;
+  readonly memory: TradeMemory;
   // Validation flags (Telegram/Emergency Stop/paper approval) are persisted in
   // RuntimeSettings so they survive restarts; auth/token/account below stay
   // live-checked so a broken connection always reflects reality.
@@ -153,6 +155,7 @@ export class AvrrioEngine {
     this.telegram = new TelegramService(config);
     this.auth = new Auth(config);
     this.scheduler = new Scheduler(this, config, this.settings);
+    this.memory = new TradeMemory();
   }
 
   async init(): Promise<void> {
@@ -161,6 +164,7 @@ export class AvrrioEngine {
       this.killSwitch.load(),
       this.recommendations.load(),
       this.settings.load(),
+      this.memory.load(),
     ]);
   }
 
@@ -411,6 +415,17 @@ export class AvrrioEngine {
       ok: r.ok,
       info: r.info,
     });
+    // Avrrio Memory: if this setup resembles one the operator has struggled
+    // with, follow the alert with a heads-up (advisory — it does not block).
+    const mem = this.assessMemory(rec.ref);
+    if (mem.matched && (mem.level === "warn" || mem.level === "caution")) {
+      await this.telegram.sendText(`🧠 Heads-up on ${rec.ref}: ${mem.message}`);
+      await this.audit.log("memory.alert_warning", "system", {
+        ref: rec.ref,
+        level: mem.level,
+        winRate: mem.winRate,
+      });
+    }
   }
 
   /**
@@ -558,6 +573,10 @@ export class AvrrioEngine {
       case "/review":
         reply = await this.cmdCoach(arg);
         break;
+      case "/memory":
+      case "/history":
+        reply = this.cmdMemory(arg);
+        break;
       case "/approve":
         reply = arg
           ? await this.approvalAction("approve", arg)
@@ -660,6 +679,17 @@ export class AvrrioEngine {
     }
     const r = await this.debate(target);
     return r.interpretation ? `${r.summary}\n\n🧠 ${r.interpretation}` : r.summary;
+  }
+
+  /**
+   * /memory — overall habit stats, or /memory <T-ref> to check one trade against
+   * history ("does this resemble a pattern you've struggled with?").
+   */
+  private cmdMemory(arg: string): string {
+    const ref = arg.trim();
+    if (!ref) return this.memorySummaryText();
+    const a = this.assessMemory(ref);
+    return `🧠 MEMORY CHECK${a.ref ? ` — ${a.ref}` : ""}\n${a.message}`;
   }
 
   /**
@@ -1816,8 +1846,104 @@ export class AvrrioEngine {
       .join("\n");
   }
 
-  closePaperTrade(id: string, exit: number, symbol: string) {
-    return this.journal.close(id, exit, pointValue(symbol));
+  async closePaperTrade(id: string, exit: number, symbol: string) {
+    const entry = await this.journal.close(id, exit, pointValue(symbol));
+    // Feed the outcome into Avrrio Memory so it can learn the operator's habits.
+    try {
+      await this.recordTradeOutcome({
+        symbol,
+        side: entry.side,
+        pnl: entry.realizedPnl ?? 0,
+        entryIso: entry.createdAt,
+      });
+    } catch (err) {
+      console.error("memory record failed (non-fatal):", err);
+    }
+    return entry;
+  }
+
+  /**
+   * Record a completed trade into Avrrio Memory, enriching it from the matching
+   * executed recommendation (setup, score, reward/risk) when one exists. Memory
+   * is descriptive only — it never blocks or places a trade.
+   */
+  async recordTradeOutcome(input: {
+    symbol: string;
+    side: Side;
+    pnl: number;
+    entryIso?: string;
+    setup?: string | null;
+    score?: number | null;
+    rewardRisk?: number | null;
+  }): Promise<void> {
+    const rec = this.latestExecutedFor(input.symbol, input.side);
+    const entryIso = input.entryIso ?? rec?.decidedAt ?? rec?.createdAt;
+    const record = await this.memory.add({
+      symbol: input.symbol,
+      side: input.side,
+      setup: input.setup ?? rec?.setupName ?? null,
+      score: input.score ?? rec?.avrrioScore ?? null,
+      rewardRisk: input.rewardRisk ?? rec?.rewardRiskRatio ?? null,
+      entryHour: entryIso ? hourInZone(entryIso, this.config.accountTimezone) : null,
+      pnl: input.pnl,
+    });
+    await this.audit.log("memory.record", "system", {
+      symbol: record.symbol,
+      setup: record.setup,
+      side: record.side,
+      result: record.result,
+    });
+  }
+
+  /** Most recent executed/decided recommendation for a symbol+side, if any. */
+  private latestExecutedFor(symbol: string, side: Side): Recommendation | undefined {
+    const sym = symbol.toUpperCase();
+    return [...this.recommendations.list()]
+      .reverse()
+      .find((r) => r.symbol.toUpperCase() === sym && r.side === side);
+  }
+
+  /**
+   * Assess a recommendation (by ref) against Avrrio Memory — the "this resembles
+   * a pattern you've struggled with" check. Advisory only.
+   */
+  assessMemory(ref: string): MemoryAssessment & { ref?: string } {
+    const rec = this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
+    if (!rec) {
+      return this.memory.assess({ setup: null, side: null });
+    }
+    const assessment = this.memory.assess({
+      setup: rec.setupName,
+      side: rec.side,
+      score: rec.avrrioScore,
+      entryHour: hourInZone(rec.createdAt, this.config.accountTimezone),
+    });
+    return { ...assessment, ref: rec.ref };
+  }
+
+  /** Telegram/console-friendly Avrrio Memory summary. */
+  memorySummaryText(): string {
+    const o = this.memory.overall();
+    if (o.trades === 0) {
+      return "🧠 AVRRIO MEMORY\nNo closed trades recorded yet. As trades close, Avrrio learns your win rates by setup, side, and time of day.";
+    }
+    const lines = [
+      "🧠 AVRRIO MEMORY",
+      `Overall: ${o.trades} trades · ${o.winRate != null ? Math.round(o.winRate * 100) + "% win" : "n/a"} · net ${o.netPnl >= 0 ? "+" : ""}$${o.netPnl}`,
+    ];
+    const setups = this.memory.bySetup().filter((s) => s.trades > 0);
+    if (setups.length) {
+      lines.push("By setup:");
+      for (const s of setups.slice(0, 6)) {
+        lines.push(`• ${s.key}: ${s.winRate != null ? Math.round(s.winRate * 100) + "%" : "n/a"} (n=${s.wins + s.losses})`);
+      }
+    }
+    const insights = this.memory.insights();
+    if (insights.length) {
+      lines.push("", "Insights:");
+      lines.push(...insights.map((i) => `• ${i}`));
+    }
+    return lines.join("\n");
   }
 
   /** Quick one-off evaluation without storing a recommendation (Phase 1 CLI). */
@@ -1844,10 +1970,29 @@ const TELEGRAM_HELP = [
   "/whatif <T-ref> <scenario> — recompute R:R (e.g. move stop to 20010, one contract)",
   "/debate <T-ref|symbol> — Bull case vs Bear case + final verdict",
   "/coach <T-ref> — post-trade review vs your discipline rules (auto-sent after each trade)",
+  "/memory [T-ref] — your win rates by setup/side/time, or check one trade vs history",
   "/approve <id> · /reject <id> — act on a pending trade (full risk checks)",
   "/pause · /resume — pause/resume the scanner",
   "/stop — Emergency Stop · /resume confirm — clear it",
 ].join("\n");
+
+/** Hour (0-23) of an ISO timestamp in the given IANA timezone (server local if empty). */
+export function hourInZone(iso: string, timezone: string): number | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  if (!timezone) return d.getHours();
+  try {
+    const s = new Intl.DateTimeFormat("en-US", {
+      hour: "2-digit",
+      hourCycle: "h23",
+      timeZone: timezone,
+    }).format(d);
+    const h = parseInt(s, 10);
+    return Number.isFinite(h) ? h % 24 : d.getHours();
+  } catch {
+    return d.getHours();
+  }
+}
 
 /** Current hour (0-23) in the given IANA timezone; falls back to server local. */
 export function localHour(timezone: string): number {

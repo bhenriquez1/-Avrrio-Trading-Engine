@@ -225,6 +225,23 @@ async function start() {
     wrap(async (req, res) => res.json(await engine.coachTrade(req.params.id ?? ""))),
   );
 
+  // Avrrio Memory — habit stats and per-trade "resembles a pattern" check.
+  app.get("/api/memory", guard, (_req, res) => {
+    res.json({
+      overall: engine.memory.overall(),
+      bySetup: engine.memory.bySetup(),
+      bySide: engine.memory.bySide(),
+      byHour: engine.memory.byHour(),
+      insights: engine.memory.insights(),
+      summary: engine.memorySummaryText(),
+    });
+  });
+  app.post(
+    "/api/recommendations/:id/memory",
+    guard,
+    (req, res) => res.json(engine.assessMemory(req.params.id ?? "")),
+  );
+
   // --- kill switch (protected) -----------------------------------------
   app.post(
     "/api/kill-switch",
