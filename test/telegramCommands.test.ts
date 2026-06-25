@@ -156,6 +156,22 @@ test("/whatif recomputes R:R deterministically (no AI key needed)", async () => 
   assert.match(r, /R:R/);
 });
 
+test("/debate produces Bull/Bear/Verdict for a trade (no AI key needed)", async () => {
+  const { engine } = await tempEngine();
+  const rec = await engine.recommendations.add(sampleRec());
+  const r = await engine.handleTelegramCommand("999", `/debate ${rec.ref}`);
+  assert.match(r, /Bull case:/);
+  assert.match(r, /Bear case:/);
+  assert.match(r, /Final verdict/);
+});
+
+test("/debate falls back to the latest signal when no ref is given", async () => {
+  const { engine } = await tempEngine();
+  await engine.recommendations.add(sampleRec());
+  const r = await engine.handleTelegramCommand("999", "/debate");
+  assert.match(r, /DEBATE/);
+});
+
 test("whatIf throws for an unknown ref", async () => {
   const { engine } = await tempEngine();
   await assert.rejects(() => engine.whatIf("T-9999", "move stop to 1"), /No recommendation/);

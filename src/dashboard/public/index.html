@@ -410,6 +410,9 @@
                   <input id="whatifin-${r.id}" placeholder="What if I move my stop to ${r.stopLoss}? Only one contract?" onkeydown="if(event.key==='Enter')whatif('${r.id}')">
                   <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="whatif('${r.id}')">What if?</button>
                 </div>
+                <div class="chat-row">
+                  <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="debate('${r.id}')">⚖️ Debate (Bull vs Bear)</button>
+                </div>
               </div>
             </div>`;
           }).join("") || '<div class="tag">No recommendations yet.</div>';
@@ -572,6 +575,18 @@
         chatAppend(id, "ai", "…recomputing");
         try {
           const r = await api(`/api/recommendations/${id}/whatif`, { method: "POST", body: JSON.stringify({ scenario: s }) }).then(j);
+          $(`chatlog-${id}`).lastChild.remove();
+          chatAppend(id, "ai", r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""));
+        } catch (e) {
+          $(`chatlog-${id}`).lastChild.remove();
+          chatAppend(id, "ai", "Error: " + e.message);
+        }
+      };
+      window.debate = async (id) => {
+        chatAppend(id, "you", "Debate this trade (Bull vs Bear)");
+        chatAppend(id, "ai", "…weighing both sides");
+        try {
+          const r = await api(`/api/recommendations/${id}/debate`, { method: "POST", body: JSON.stringify({}) }).then(j);
           $(`chatlog-${id}`).lastChild.remove();
           chatAppend(id, "ai", r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""));
         } catch (e) {

@@ -15,6 +15,7 @@ import {
   computeWhatIf,
   type WhatIfResult,
 } from "./ai/tradeChat.js";
+import { buildDebate, type DebateResult } from "./ai/debate.js";
 import { NewsReader } from "./news/newsReader.js";
 import { NotificationManager } from "./notifications/notifier.js";
 import { EmailNotifier } from "./notifications/emailNotifier.js";
@@ -548,6 +549,9 @@ export class AvrrioEngine {
       case "/what_if":
         reply = await this.cmdWhatIf(arg);
         break;
+      case "/debate":
+        reply = await this.cmdDebate(arg);
+        break;
       case "/approve":
         reply = arg
           ? await this.approvalAction("approve", arg)
@@ -634,6 +638,22 @@ export class AvrrioEngine {
     } catch (err) {
       return err instanceof Error ? err.message : "Could not run that what-if.";
     }
+  }
+
+  /**
+   * /debate <T-ref|symbol> — Bull/Bear/Verdict. Defaults to the latest signal
+   * when nothing is given.
+   */
+  private async cmdDebate(arg: string): Promise<string> {
+    let target = arg.trim();
+    if (!target) {
+      const recs = this.recommendations.list();
+      const latest = recs[recs.length - 1];
+      if (!latest) return "Usage: /debate <T-ref or symbol> — e.g. /debate T-1042 or /debate NQ.";
+      target = latest.ref;
+    }
+    const r = await this.debate(target);
+    return r.interpretation ? `${r.summary}\n\n🧠 ${r.interpretation}` : r.summary;
   }
 
   /**
@@ -794,6 +814,72 @@ export class AvrrioEngine {
       const interpretation = await this.claude.ask(
         `Scenario: ${scenario}\nInterpret this what-if for the operator in 1-2 sentences. Do not invent numbers.`,
         [buildTradeContext(rec), "", "Deterministic recompute:", result.summary].join("\n"),
+      );
+      return { ...result, interpretation };
+    }
+    return result;
+  }
+
+  /**
+   * Debate Mode: build a Bull Case / Bear Case / Final Verdict for a specific
+   * recommendation (by ref) or a bare symbol. Deterministic structure (works
+   * with no AI key); Claude, when enabled, adds a short closing thought without
+   * changing the verdict. ADVISORY ONLY — never places or approves a trade.
+   */
+  async debate(refOrSymbol: string): Promise<DebateResult & { interpretation?: string }> {
+    const thresholds = {
+      minScore: this.config.notifications.opportunityAlertScore,
+      minRR: this.config.scheduler.minRewardRisk,
+    };
+    const rec = this.recommendations.findByRef(refOrSymbol);
+    const symbol = (rec?.symbol ?? refOrSymbol).toUpperCase();
+    let snapshot: MarketSnapshot | null = null;
+    let components: ReturnType<typeof scoreSnapshot>["components"] | null = null;
+    let score: number | null = rec?.avrrioScore ?? null;
+    let newsState: { blocked: boolean; reason: string } | null = rec
+      ? rec.news
+      : null;
+    try {
+      snapshot = await this.snapshot(symbol);
+      const news = await this.news.assess(symbol);
+      const scored = scoreSnapshot(snapshot, news.blocked);
+      components = scored.components;
+      if (score == null) score = scored.score;
+      if (!newsState) newsState = { blocked: news.blocked, reason: news.reason };
+    } catch {
+      /* snapshot/news optional — debate degrades to whatever the rec carries */
+    }
+
+    const result = buildDebate({
+      symbol,
+      side: rec?.side ?? null,
+      score,
+      rr: rec?.rewardRiskRatio ?? null,
+      consensus: rec?.consensus ?? null,
+      news: newsState,
+      components,
+      structure: snapshot?.structure ?? null,
+      last: snapshot?.quote.last ?? null,
+      thresholds,
+    });
+
+    await this.audit.log("trade.debate", "operator", {
+      ref: rec?.ref,
+      symbol,
+      verdict: result.verdict,
+      confidence: result.confidence,
+    });
+
+    if (this.claude.enabled) {
+      const context = [
+        rec ? buildTradeContext(rec) : `Symbol: ${symbol}`,
+        "",
+        "Deterministic debate:",
+        result.summary,
+      ].join("\n");
+      const interpretation = await this.claude.ask(
+        "In one or two sentences, what is the single most important thing for the operator to weigh here? Do not change the verdict or invent numbers.",
+        context,
       );
       return { ...result, interpretation };
     }
@@ -1644,6 +1730,7 @@ const TELEGRAM_HELP = [
   "/ask <question> (or just type) — ask the AI; advisory only, cannot trade",
   "/discuss <T-ref> <question> — per-trade chat (e.g. why not buy now?)",
   "/whatif <T-ref> <scenario> — recompute R:R (e.g. move stop to 20010, one contract)",
+  "/debate <T-ref|symbol> — Bull case vs Bear case + final verdict",
   "/approve <id> · /reject <id> — act on a pending trade (full risk checks)",
   "/pause · /resume — pause/resume the scanner",
   "/stop — Emergency Stop · /resume confirm — clear it",

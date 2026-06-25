@@ -206,6 +206,18 @@ async function start() {
     }),
   );
 
+  // Debate Mode — Bull/Bear/Verdict for a recommendation (id/ref) or symbol.
+  app.post(
+    "/api/recommendations/:id/debate",
+    guard,
+    wrap(async (req, res) => res.json(await engine.debate(req.params.id ?? ""))),
+  );
+  app.post(
+    "/api/debate/:symbol",
+    guard,
+    wrap(async (req, res) => res.json(await engine.debate(req.params.symbol ?? ""))),
+  );
+
   // --- kill switch (protected) -----------------------------------------
   app.post(
     "/api/kill-switch",
