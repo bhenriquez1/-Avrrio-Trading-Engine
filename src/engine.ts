@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { AuditLog } from "./audit/auditLog.js";
 import { Auth } from "./auth/auth.js";
 import { ClaudeAnalysisService } from "./ai/claudeAnalysis.js";
@@ -130,18 +131,21 @@ export class AvrrioEngine {
 
   constructor(config = loadConfig()) {
     this.config = config;
-    this.audit = new AuditLog();
-    this.settings = new RuntimeSettings(config);
+    // All file-backed state lives under config.dataDir so it can be redirected
+    // to a mounted persistent disk (Render etc.) and survive redeploys.
+    const dataPath = (file: string) => join(config.dataDir, file);
+    this.audit = new AuditLog(dataPath("audit.jsonl"));
+    this.settings = new RuntimeSettings(config, dataPath("settings.json"));
     this.client = new TopstepClient(config);
     this.market = new MarketDataReader(this.client);
     this.risk = new RiskManager();
-    this.journal = new TradeJournal();
+    this.journal = new TradeJournal(dataPath("journal.json"));
     this.claude = new ClaudeAnalysisService(config);
     this.consensus = new ConsensusEngine(config);
     this.news = new NewsReader(config);
     this.scanner = new Scanner(this.market, this.news);
-    this.killSwitch = new KillSwitch(config, this.audit);
-    this.recommendations = new RecommendationStore();
+    this.killSwitch = new KillSwitch(config, this.audit, dataPath("kill-switch.json"));
+    this.recommendations = new RecommendationStore(dataPath("recommendations.json"));
     this.executor = new OrderExecutor(
       this.settings,
       this.client,
@@ -155,7 +159,7 @@ export class AvrrioEngine {
     this.telegram = new TelegramService(config);
     this.auth = new Auth(config);
     this.scheduler = new Scheduler(this, config, this.settings);
-    this.memory = new TradeMemory();
+    this.memory = new TradeMemory(dataPath("memory.json"));
   }
 
   async init(): Promise<void> {
@@ -760,6 +764,7 @@ export class AvrrioEngine {
       `Alert thresholds: Avrrio score ≥ ${this.config.notifications.opportunityAlertScore}, R:R ≥ ${this.config.scheduler.minRewardRisk}, max ${this.config.scheduler.maxAlerts}/cycle`,
       `Report hours: ${this.config.scheduler.reportHours.join(", ") || "none"} · timezone: ${this.config.accountTimezone || "server local"}`,
       `AI: ${this.aiHealth().status} (${this.aiHealth().model})`,
+      `Data dir: ${this.config.dataDir}${this.config.dataDir === "data" ? " (default — set DATA_DIR to a mounted disk to persist across redeploys)" : ""}`,
     ].join("\n");
   }
 

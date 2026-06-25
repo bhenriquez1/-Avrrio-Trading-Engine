@@ -58,6 +58,23 @@ If `TOPSTEP_API_KEY` / `TOPSTEP_USERNAME` are not set, the engine runs in
 **offline mode** with deterministic demo data so you can develop everything
 except real market/account reads.
 
+### Persisting state across redeploys (`DATA_DIR`)
+
+All file-backed state — Avrrio Memory (your win-rate history), recommendations,
+the journal, runtime settings, the kill switch, and the audit log — is written
+under a single base directory. It defaults to `./data`, which on Render is
+**ephemeral**: it resets on every redeploy, so Avrrio Memory would forget your
+trading history.
+
+To keep it:
+
+1. Add a **persistent disk** to the Render service (e.g. mount path `/var/data`).
+2. Set `DATA_DIR=/var/data` (alias `AVRRIO_DATA_DIR`) in the environment.
+
+The engine creates the directory on first write. When `DATA_DIR` is unset, the
+dashboard warnings and `/settings` flag that state is non-persistent. Local
+development can leave it unset (uses `./data`, which is gitignored).
+
 ## Connecting TopstepX / ProjectX
 
 1. In TopstepX, open the **API** tab and generate an API key.
