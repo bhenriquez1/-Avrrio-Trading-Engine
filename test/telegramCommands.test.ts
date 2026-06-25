@@ -172,6 +172,14 @@ test("/debate falls back to the latest signal when no ref is given", async () =>
   assert.match(r, /DEBATE/);
 });
 
+test("/coach reviews a trade against discipline rules (no AI key needed)", async () => {
+  const { engine } = await tempEngine();
+  const rec = await engine.recommendations.add(sampleRec());
+  const r = await engine.handleTelegramCommand("999", `/coach ${rec.ref}`);
+  assert.match(r, /TRADE COACH/);
+  assert.match(r, /Discipline grade/);
+});
+
 test("whatIf throws for an unknown ref", async () => {
   const { engine } = await tempEngine();
   await assert.rejects(() => engine.whatIf("T-9999", "move stop to 1"), /No recommendation/);

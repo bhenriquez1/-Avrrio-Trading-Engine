@@ -218,6 +218,13 @@ async function start() {
     wrap(async (req, res) => res.json(await engine.debate(req.params.symbol ?? ""))),
   );
 
+  // Trade Coach — post-trade review of a recommendation (id/ref).
+  app.post(
+    "/api/recommendations/:id/coach",
+    guard,
+    wrap(async (req, res) => res.json(await engine.coachTrade(req.params.id ?? ""))),
+  );
+
   // --- kill switch (protected) -----------------------------------------
   app.post(
     "/api/kill-switch",
