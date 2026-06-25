@@ -38,6 +38,7 @@ function snap(last: number): MarketSnapshot {
 function makeEngine(results: ScanResult[]) {
   const proposed: string[] = [];
   const events: string[] = [];
+  const watchAlerts: string[] = [];
   let refCounter = 1000;
   const engine = {
     async scan() {
@@ -50,10 +51,13 @@ function makeEngine(results: ScanResult[]) {
       proposed.push(input.symbol);
       return { ref: `T-${++refCounter}`, status: "pending" } as Recommendation;
     },
+    async sendWatchAlert(nm: { symbol: string }) {
+      watchAlerts.push(nm.symbol);
+    },
     audit: { async log(type: string) { events.push(type); } },
     stage() {},
   } as unknown as AvrrioEngine;
-  return { engine, proposed, events };
+  return { engine, proposed, events, watchAlerts };
 }
 
 test("only tradable, high-score, directional setups qualify", async () => {
@@ -129,4 +133,44 @@ test("no qualifying setup -> no proposal/alert, logs no_qualified_setups", async
   assert.ok(events.includes("scan.completed"));
   assert.ok(events.includes("no_qualified_setups"));
   assert.ok(!events.includes("scheduler.alert"));
+});
+
+test("near-miss analysis explains the closest non-qualified setups", async () => {
+  const config = loadConfig();
+  config.notifications.opportunityAlertScore = 85;
+  config.scheduler.minRewardRisk = 2;
+  config.scheduler.watchAlertsEnabled = false; // isolate near-miss computation
+  const { engine } = makeEngine([
+    result({ symbol: "NQ", score: 90, direction: "bullish" }),   // qualifies -> alerted
+    result({ symbol: "ES", score: 80, direction: "bullish" }),   // near-miss: score < 85
+    result({ symbol: "CL", score: 88, direction: "reversal" }),  // near-miss: no direction
+    result({ symbol: "AAPL", score: 99, direction: "bullish", tradable: false }), // watchlist
+  ]);
+  const sched = new Scheduler(engine, config, new RuntimeSettings(config));
+  await sched.runScanCycle();
+  const last = sched.lastScan();
+  assert.ok(last);
+  const syms = last!.nearMisses.map((n) => n.symbol);
+  assert.ok(!syms.includes("NQ")); // alerted, excluded from near-misses
+  const es = last!.nearMisses.find((n) => n.symbol === "ES");
+  assert.ok(es && es.reasons.some((r) => /score/.test(r)));
+  const aapl = last!.nearMisses.find((n) => n.symbol === "AAPL");
+  assert.ok(aapl && aapl.reasons.some((r) => /watchlist/.test(r)));
+});
+
+test("watch alert fires (deduped) for a near-ready tradable setup", async () => {
+  const config = loadConfig();
+  config.notifications.opportunityAlertScore = 85;
+  config.scheduler.watchMargin = 5;
+  config.scheduler.watchAlertsEnabled = true;
+  const { engine, watchAlerts } = makeEngine([
+    result({ symbol: "ES", score: 82, direction: "bullish" }), // 82 >= 85-5 -> watch
+    result({ symbol: "CL", score: 60, direction: "bullish" }), // too far below -> no watch
+  ]);
+  const sched = new Scheduler(engine, config, new RuntimeSettings(config));
+  await sched.runScanCycle();
+  assert.deepEqual(watchAlerts, ["ES"]);
+  // Second scan same day -> deduped (no repeat).
+  await sched.runScanCycle();
+  assert.deepEqual(watchAlerts, ["ES"]);
 });

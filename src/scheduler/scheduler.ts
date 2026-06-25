@@ -1,6 +1,6 @@
 import type { AvrrioConfig } from "../config.js";
 import type { AvrrioEngine } from "../engine.js";
-import { suggestLevels } from "../scanner/scanner.js";
+import { suggestLevels, type ScanResult } from "../scanner/scanner.js";
 import type { RuntimeSettings } from "../settings/runtimeSettings.js";
 import type { Side } from "../types.js";
 
@@ -12,6 +12,16 @@ export interface ScanCycleResult {
   refs: string[];
 }
 
+/** A setup that did not qualify, with why — for "near-miss" feedback. */
+export interface NearMiss {
+  symbol: string;
+  side: Side | null;
+  score: number;
+  tradable: boolean;
+  rr: number | null;
+  reasons: string[];
+}
+
 /** Summary of the most recent scan, for /why and /last_signal. */
 export interface LastScanSummary {
   time: string;
@@ -21,6 +31,8 @@ export interface LastScanSummary {
   refs: string[];
   /** Plain-language reasons nothing (more) qualified. */
   reasons: string[];
+  /** Top non-qualifying setups, ranked by score, with why each failed. */
+  nearMisses: NearMiss[];
 }
 
 /**
@@ -46,6 +58,8 @@ export class Scheduler {
   private lastSummary: LastScanSummary | null = null;
   /** Keys "YYYY-MM-DD:HH" already reported, so each slot fires once per day. */
   private readonly reportsSent = new Set<string>();
+  /** Keys "YYYY-MM-DD:symbol:side" already watch-alerted, deduped per day. */
+  private readonly watchAlerted = new Set<string>();
   private readonly minScore: number;
 
   constructor(
@@ -122,6 +136,7 @@ export class Scheduler {
     if (this.scanDay !== today) {
       this.scanDay = today;
       this.scansToday = 0;
+      this.watchAlerted.clear(); // fresh watch dedupe each day
     }
     this.scansToday++;
     this.lastScanTime = new Date().toISOString();
@@ -162,6 +177,7 @@ export class Scheduler {
     });
 
     const refs: string[] = [];
+    const alertedSymbols = new Set<string>();
     let alerted = 0;
     for (const r of candidates) {
       if (alerted >= this.config.scheduler.maxAlerts) break;
@@ -187,6 +203,7 @@ export class Scheduler {
       if (rec.status === "pending") {
         alerted++;
         refs.push(rec.ref);
+        alertedSymbols.add(r.symbol);
         this.lastAlertTime = new Date().toISOString();
         this.engine.stage("TRADE_APPROVED", { ref: rec.ref, symbol: rec.symbol, side });
         await this.engine.audit.log("scheduler.alert", "system", {
@@ -204,6 +221,10 @@ export class Scheduler {
       }
     }
 
+    // Near-miss analysis (never lowers filters) + deduped watch alerts.
+    const nearMisses = await this.computeNearMisses(results, alertedSymbols);
+    await this.maybeWatchAlerts(today, nearMisses);
+
     const reasonList = [...reasons];
     if (alerted === 0 && reasonList.length === 0) reasonList.push("no valid setup");
     this.lastSummary = {
@@ -213,6 +234,7 @@ export class Scheduler {
       alerted,
       refs,
       reasons: reasonList,
+      nearMisses,
     };
 
     // Record the outcome so the audit log shows the scheduler ran even when
@@ -242,6 +264,73 @@ export class Scheduler {
   /** Most recent scan summary (counts + no-trade reasons), if any. */
   lastScan(): LastScanSummary | null {
     return this.lastSummary;
+  }
+
+  /**
+   * Top non-qualifying setups ranked by score, each annotated with why it failed.
+   * Read-only — never proposes a trade and never lowers a filter.
+   */
+  private async computeNearMisses(
+    results: ScanResult[],
+    alertedSymbols: Set<string>,
+  ): Promise<NearMiss[]> {
+    const minRR = this.config.scheduler.minRewardRisk;
+    const pool = results
+      .filter((r) => !alertedSymbols.has(r.symbol))
+      .sort((a, b) => b.score - a.score);
+    const out: NearMiss[] = [];
+    for (const r of pool) {
+      if (out.length >= 3) break;
+      const side: Side | null =
+        r.direction === "bullish" ? "long" : r.direction === "bearish" ? "short" : null;
+      const reasons: string[] = [];
+      if (!r.tradable) reasons.push("watchlist-only (not futures)");
+      if (r.score < this.minScore) reasons.push(`Avrrio score ${r.score} < ${this.minScore}`);
+      if (!side) reasons.push("trend/direction not aligned");
+      if (r.newsBlocked) reasons.push("news/chop filter");
+      let rr: number | null = null;
+      if (side && r.tradable) {
+        try {
+          const snap = await this.engine.snapshot(r.symbol);
+          const lv = suggestLevels(snap, side);
+          rr = Math.abs(lv.target - lv.entry) / Math.max(1e-9, Math.abs(lv.entry - lv.stopLoss));
+          if (rr < minRR) reasons.push(`reward/risk ${rr.toFixed(1)} < ${minRR}`);
+          if (this.engine.recommendations?.hasOpenDuplicate?.(r.symbol, side))
+            reasons.push("duplicate open position");
+        } catch {
+          /* snapshot optional */
+        }
+      }
+      out.push({
+        symbol: r.symbol,
+        side,
+        score: r.score,
+        tradable: r.tradable,
+        rr: rr != null ? Number(rr.toFixed(1)) : null,
+        reasons,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Sends a deduped "watch" alert for a tradable setup that is close but not
+   * ready (within watchMargin of the score threshold). Once per symbol+side per
+   * day, capped. Separate from real trade alerts; never executes anything.
+   */
+  private async maybeWatchAlerts(day: string, nearMisses: NearMiss[]): Promise<void> {
+    if (!this.config.scheduler.watchAlertsEnabled) return;
+    let sent = 0;
+    for (const nm of nearMisses) {
+      if (sent >= this.config.scheduler.maxAlerts) break;
+      if (!nm.tradable || !nm.side) continue;
+      if (nm.score < this.minScore - this.config.scheduler.watchMargin) continue;
+      const key = `${day}:${nm.symbol}:${nm.side}`;
+      if (this.watchAlerted.has(key)) continue;
+      this.watchAlerted.add(key);
+      await this.engine.sendWatchAlert?.(nm);
+      sent++;
+    }
   }
 
   private async maybeDailySummary(): Promise<void> {
