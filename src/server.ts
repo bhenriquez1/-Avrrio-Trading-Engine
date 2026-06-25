@@ -186,6 +186,26 @@ async function start() {
     }),
   );
 
+  // Per-trade conversation (advisory only — cannot place/approve trades).
+  app.post(
+    "/api/recommendations/:id/discuss",
+    guard,
+    wrap(async (req, res) => {
+      const { question } = req.body as { question?: string };
+      res.json(await engine.discussTrade(req.params.id ?? "", String(question ?? "")));
+    }),
+  );
+
+  // "What if?" — deterministic R:R recompute (+ optional AI interpretation).
+  app.post(
+    "/api/recommendations/:id/whatif",
+    guard,
+    wrap(async (req, res) => {
+      const { scenario } = req.body as { scenario?: string };
+      res.json(await engine.whatIf(req.params.id ?? "", String(scenario ?? "")));
+    }),
+  );
+
   // --- kill switch (protected) -----------------------------------------
   app.post(
     "/api/kill-switch",

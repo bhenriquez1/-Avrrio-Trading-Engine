@@ -10,6 +10,11 @@ import {
   type Recommendation,
 } from "./execution/recommendations.js";
 import { MarketDataReader, type MarketSnapshot } from "./market/marketData.js";
+import {
+  buildTradeContext,
+  computeWhatIf,
+  type WhatIfResult,
+} from "./ai/tradeChat.js";
 import { NewsReader } from "./news/newsReader.js";
 import { NotificationManager } from "./notifications/notifier.js";
 import { EmailNotifier } from "./notifications/emailNotifier.js";
@@ -535,6 +540,14 @@ export class AvrrioEngine {
           ? await this.claude.ask(arg, await this.askContext())
           : "Usage: /ask <your question> — or just type your question.";
         break;
+      case "/discuss":
+      case "/ask_trade":
+        reply = await this.cmdDiscuss(arg);
+        break;
+      case "/whatif":
+      case "/what_if":
+        reply = await this.cmdWhatIf(arg);
+        break;
       case "/approve":
         reply = arg
           ? await this.approvalAction("approve", arg)
@@ -589,6 +602,54 @@ export class AvrrioEngine {
       if (scan.reasons.length) lines.push("No-trade reasons: " + scan.reasons.join("; "));
     }
     return lines.join("\n");
+  }
+
+  /**
+   * /discuss <ref> <question> — per-trade conversation. If no ref is given, uses
+   * the most recent recommendation so the operator can just ask a follow-up.
+   */
+  private async cmdDiscuss(arg: string): Promise<string> {
+    if (!arg) {
+      return 'Usage: /discuss <T-ref> <question> — e.g. "/discuss T-1042 why not buy now?" (omit the ref to ask about the latest signal).';
+    }
+    const { ref, question } = this.splitRefAndText(arg);
+    if (!question) return "Add a question, e.g. /discuss T-1042 where should I enter?";
+    const r = await this.discussTrade(ref, question);
+    return `💬 ${r.ref} — ${question}\n\n${r.answer}`;
+  }
+
+  /**
+   * /whatif <ref> <scenario> — live R:R recompute. If no ref is given, uses the
+   * most recent recommendation.
+   */
+  private async cmdWhatIf(arg: string): Promise<string> {
+    if (!arg) {
+      return 'Usage: /whatif <T-ref> <scenario> — e.g. "/whatif T-1042 move my stop to 20010" or "/whatif T-1042 only one contract".';
+    }
+    const { ref, question: scenario } = this.splitRefAndText(arg);
+    if (!scenario) return "Add a scenario, e.g. /whatif T-1042 move my stop to 20010.";
+    try {
+      const r = await this.whatIf(ref, scenario);
+      return r.interpretation ? `${r.summary}\n\n🧠 ${r.interpretation}` : r.summary;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Could not run that what-if.";
+    }
+  }
+
+  /**
+   * Splits "<T-ref> <rest>" — if the first token looks like a trade ref (T-1234)
+   * it's used as the ref; otherwise the whole string is the question and the ref
+   * defaults to the latest recommendation.
+   */
+  private splitRefAndText(arg: string): { ref: string; question: string } {
+    const parts = arg.trim().split(/\s+/);
+    const first = parts[0] ?? "";
+    if (/^t-?\d+$/i.test(first)) {
+      return { ref: first.toUpperCase().replace(/^T(?=\d)/, "T-"), question: parts.slice(1).join(" ").trim() };
+    }
+    const recs = this.recommendations.list();
+    const latest = recs[recs.length - 1];
+    return { ref: latest?.ref ?? "", question: arg.trim() };
   }
 
   /** /risk — current risk limits and usage. */
@@ -686,6 +747,57 @@ export class AvrrioEngine {
       `TopstepX: ${s.connected ? "connected" : "not connected"}, account ${s.accountId}, day P&L $${s.dailyPnL}, buying power $${s.availableBuyingPower}.`,
       `Emergency Stop: ${this.killSwitch.isEngaged() ? "engaged" : "clear"}. Pending approvals: ${this.recommendations.pending().length}.`,
     ].join("\n");
+  }
+
+  /**
+   * Per-trade conversation: answer a free-form follow-up about ONE specific
+   * recommendation (e.g. "why not buy now?", "where should I enter?"). Feeds the
+   * trade's full secret-free context to Claude. ADVISORY ONLY — it can never
+   * place, approve, or modify the trade. Works offline (Claude returns a stub).
+   */
+  async discussTrade(ref: string, question: string): Promise<{ ref: string; question: string; answer: string }> {
+    const rec = this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
+    if (!rec) {
+      return { ref, question, answer: `No recommendation found for "${ref}". Use /last_signal to see recent trades.` };
+    }
+    const context = [await this.askContext(), "", buildTradeContext(rec)].join("\n");
+    const answer = await this.claude.ask(question, context);
+    await this.audit.log("trade.discuss", "operator", {
+      ref: rec.ref,
+      symbol: rec.symbol,
+      question: question.slice(0, 120),
+    });
+    return { ref: rec.ref, question, answer };
+  }
+
+  /**
+   * "What if?" mode: recompute a trade's risk/reward (and expectancy) under a
+   * scenario like "move my stop to X", "only one contract", or "win rate 40%".
+   * The numbers are deterministic (no AI key needed); when Claude is configured
+   * it adds a short interpretation. Never alters the live trade.
+   */
+  async whatIf(ref: string, scenario: string): Promise<WhatIfResult & { interpretation?: string }> {
+    const rec = this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
+    if (!rec) {
+      throw new Error(`No recommendation found for "${ref}".`);
+    }
+    const result = computeWhatIf(rec, scenario);
+    await this.audit.log("trade.whatif", "operator", {
+      ref: rec.ref,
+      symbol: rec.symbol,
+      scenario: scenario.slice(0, 120),
+      baseRr: result.base.rr,
+      adjustedRr: result.adjusted.rr,
+    });
+    // Optional AI prose layered on top of the deterministic figures.
+    if (this.claude.enabled && result.changes.length > 0) {
+      const interpretation = await this.claude.ask(
+        `Scenario: ${scenario}\nInterpret this what-if for the operator in 1-2 sentences. Do not invent numbers.`,
+        [buildTradeContext(rec), "", "Deterministic recompute:", result.summary].join("\n"),
+      );
+      return { ...result, interpretation };
+    }
+    return result;
   }
 
   /**
@@ -1530,6 +1642,8 @@ const TELEGRAM_HELP = [
   "/risk — risk limits and current usage",
   "/settings — current mode, scanner cadence, thresholds, timezone",
   "/ask <question> (or just type) — ask the AI; advisory only, cannot trade",
+  "/discuss <T-ref> <question> — per-trade chat (e.g. why not buy now?)",
+  "/whatif <T-ref> <scenario> — recompute R:R (e.g. move stop to 20010, one contract)",
   "/approve <id> · /reject <id> — act on a pending trade (full risk checks)",
   "/pause · /resume — pause/resume the scanner",
   "/stop — Emergency Stop · /resume confirm — clear it",

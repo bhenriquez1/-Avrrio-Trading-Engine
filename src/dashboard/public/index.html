@@ -42,6 +42,13 @@
       .rec { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
       .rec .actions { display: flex; gap: 8px; }
       .rec .actions button { width: auto; padding: 6px 14px; }
+      .chat { border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 4px; }
+      .chat-row { display: flex; gap: 6px; margin-top: 6px; }
+      .chat-row input { flex: 1; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+      .chatlog { display: grid; gap: 6px; margin-top: 6px; }
+      .chatmsg { font-size: 13px; line-height: 1.4; padding: 6px 10px; border-radius: 6px; }
+      .chatmsg.you { background: rgba(127,127,127,0.10); }
+      .chatmsg.ai { background: rgba(80,160,255,0.10); }
       .hidden { display: none; }
       #login { max-width: 360px; margin: 80px auto; }
       .kill { display: flex; align-items: center; gap: 10px; }
@@ -392,6 +399,18 @@
                   <button class="btn-primary" onclick="approve('${r.id}','pre-approved')">Pre-approve (wait for entry)</button>
                   <button class="btn-danger" onclick="reject('${r.id}')">Reject</button>
                 </div>` : ''}
+              <div class="chat" id="chat-${r.id}">
+                <div class="tag" style="margin-top:8px">💬 Ask Avrrio about this trade <span class="tag" style="color:var(--muted)">(advisory only — never trades)</span></div>
+                <div class="chatlog" id="chatlog-${r.id}"></div>
+                <div class="chat-row">
+                  <input id="chatin-${r.id}" placeholder="Why not buy now? Where should I enter?" onkeydown="if(event.key==='Enter')discuss('${r.id}')">
+                  <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="discuss('${r.id}')">Ask</button>
+                </div>
+                <div class="chat-row">
+                  <input id="whatifin-${r.id}" placeholder="What if I move my stop to ${r.stopLoss}? Only one contract?" onkeydown="if(event.key==='Enter')whatif('${r.id}')">
+                  <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="whatif('${r.id}')">What if?</button>
+                </div>
+              </div>
             </div>`;
           }).join("") || '<div class="tag">No recommendations yet.</div>';
       }
@@ -517,6 +536,48 @@
       window.reject = async (id) => {
         await api(`/api/recommendations/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: "operator rejected" }) });
         refresh();
+      };
+
+      function chatAppend(id, who, text) {
+        const log = $(`chatlog-${id}`);
+        if (!log) return;
+        const div = document.createElement("div");
+        div.className = "chatmsg " + who;
+        div.innerHTML = `<b>${who === "you" ? "You" : "Avrrio"}:</b> ${String(text).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/\n/g,"<br>")}`;
+        log.appendChild(div);
+        log.scrollTop = log.scrollHeight;
+      }
+      window.discuss = async (id) => {
+        const input = $(`chatin-${id}`);
+        const q = (input.value || "").trim();
+        if (!q) return;
+        input.value = "";
+        chatAppend(id, "you", q);
+        chatAppend(id, "ai", "…thinking");
+        try {
+          const r = await api(`/api/recommendations/${id}/discuss`, { method: "POST", body: JSON.stringify({ question: q }) }).then(j);
+          $(`chatlog-${id}`).lastChild.remove();
+          chatAppend(id, "ai", r.answer || "(no answer)");
+        } catch (e) {
+          $(`chatlog-${id}`).lastChild.remove();
+          chatAppend(id, "ai", "Error: " + e.message);
+        }
+      };
+      window.whatif = async (id) => {
+        const input = $(`whatifin-${id}`);
+        const s = (input.value || "").trim();
+        if (!s) return;
+        input.value = "";
+        chatAppend(id, "you", "What if: " + s);
+        chatAppend(id, "ai", "…recomputing");
+        try {
+          const r = await api(`/api/recommendations/${id}/whatif`, { method: "POST", body: JSON.stringify({ scenario: s }) }).then(j);
+          $(`chatlog-${id}`).lastChild.remove();
+          chatAppend(id, "ai", r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""));
+        } catch (e) {
+          $(`chatlog-${id}`).lastChild.remove();
+          chatAppend(id, "ai", "Error: " + e.message);
+        }
       };
 
       $("proposeBtn").addEventListener("click", async () => {

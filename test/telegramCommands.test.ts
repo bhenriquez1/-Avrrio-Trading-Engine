@@ -9,6 +9,30 @@ import { AuditLog } from "../src/audit/auditLog.js";
 import { KillSwitch } from "../src/safety/killSwitch.js";
 import { RuntimeSettings } from "../src/settings/runtimeSettings.js";
 import { TelegramService } from "../src/telegram/telegramService.js";
+import type { NewRecommendation } from "../src/execution/recommendations.js";
+
+/** A minimal risk-approved recommendation for discuss/whatif tests. */
+function sampleRec(): NewRecommendation {
+  return {
+    setupName: "pullback",
+    symbol: "NQ",
+    side: "long",
+    size: 2,
+    entry: 20000,
+    stopLoss: 19980,
+    target: 20060,
+    riskAmount: 200,
+    rewardRiskRatio: 3,
+    riskApproved: true,
+    violations: [],
+    avrrioScore: 88,
+    consensus: { recommendation: "long", confidence: 0.5, agreement: 2, available: 3, opinions: [] },
+    news: { blocked: false, reason: "" },
+    autoEligible: false,
+    expiresAt: null,
+    approvalMode: null,
+  };
+}
 
 async function tempEngine() {
   const dir = await mkdtemp(join(tmpdir(), "avrrio-tg-"));
@@ -107,6 +131,34 @@ test("plain (non-slash) text is routed to the AI assistant (advisory)", async ()
   const r = await engine.handleTelegramCommand("999", "Why no trade right now?");
   // No ANTHROPIC_API_KEY in tests -> advisory offline stub, never trades.
   assert.match(r, /offline|advisory|Claude/i);
+});
+
+test("/discuss and /whatif show usage without args", async () => {
+  const { engine } = await tempEngine();
+  assert.match(await engine.handleTelegramCommand("999", "/discuss"), /Usage: \/discuss/);
+  assert.match(await engine.handleTelegramCommand("999", "/whatif"), /Usage: \/whatif/);
+});
+
+test("/discuss a specific trade is advisory only (offline stub)", async () => {
+  const { engine } = await tempEngine();
+  const rec = await engine.recommendations.add(sampleRec());
+  const r = await engine.handleTelegramCommand("999", `/discuss ${rec.ref} why not buy now?`);
+  assert.match(r, new RegExp(rec.ref));
+  // No ANTHROPIC_API_KEY in tests -> advisory offline stub, never trades.
+  assert.match(r, /offline|advisory|Claude/i);
+});
+
+test("/whatif recomputes R:R deterministically (no AI key needed)", async () => {
+  const { engine } = await tempEngine();
+  const rec = await engine.recommendations.add(sampleRec());
+  const r = await engine.handleTelegramCommand("999", `/whatif ${rec.ref} move my stop to 19990`);
+  assert.match(r, /what-if/i);
+  assert.match(r, /R:R/);
+});
+
+test("whatIf throws for an unknown ref", async () => {
+  const { engine } = await tempEngine();
+  await assert.rejects(() => engine.whatIf("T-9999", "move stop to 1"), /No recommendation/);
 });
 
 test("pipelineDiagnostics reports the key pipeline stages", async () => {
