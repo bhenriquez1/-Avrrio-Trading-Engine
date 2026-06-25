@@ -133,6 +133,11 @@
         </div>
 
         <div class="card">
+          <h2>🧠 Avrrio Memory (your trading habits)</h2>
+          <div id="memory"><div class="tag">Loading…</div></div>
+        </div>
+
+        <div class="card">
           <h2>Audit log (latest)</h2>
           <table id="audit"><thead><tr><th>Time</th><th>Type</th><th>Actor</th><th>Details</th></tr></thead><tbody></tbody></table>
         </div>
@@ -250,6 +255,24 @@
           </div>`;
         loadRecs().catch((e) => showError("recs: " + e.message));
         loadAudit().catch(() => {});
+        loadMemory().catch(() => {});
+      }
+
+      async function loadMemory() {
+        const m = await api("/api/memory").then(j);
+        const o = m.overall || {};
+        if (!o.trades) {
+          $("memory").innerHTML = '<div class="tag">No closed trades recorded yet. As trades close, Avrrio learns your win rates by setup, side, and time of day.</div>';
+          return;
+        }
+        const wr = (s) => (s.winRate == null ? "n/a" : Math.round(s.winRate * 100) + "%");
+        const setups = (m.bySetup || []).filter((s) => s.trades > 0)
+          .map((s) => `<tr><td>${s.key}</td><td>${wr(s)}</td><td>${s.wins + s.losses}</td><td>${s.netPnl >= 0 ? "+" : ""}$${s.netPnl}</td></tr>`).join("");
+        const insights = (m.insights || []).map((i) => `<li>${i}</li>`).join("");
+        $("memory").innerHTML =
+          `<div class="tag">Overall: <b>${o.trades}</b> trades · <b>${wr(o)}</b> win · net ${o.netPnl >= 0 ? "+" : ""}$${o.netPnl}</div>` +
+          (setups ? `<table style="margin-top:8px"><thead><tr><th>Setup</th><th>Win rate</th><th>n</th><th>Net</th></tr></thead><tbody>${setups}</tbody></table>` : "") +
+          (insights ? `<ul style="margin-top:8px">${insights}</ul>` : "");
       }
 
       window.topstepx = async (action) => {
@@ -413,6 +436,7 @@
                 <div class="chat-row">
                   <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="debate('${r.id}')">⚖️ Debate (Bull vs Bear)</button>
                   <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="coach('${r.id}')">🧑‍🏫 Coach review</button>
+                  <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="memcheck('${r.id}')">🧠 Memory check</button>
                 </div>
               </div>
             </div>`;
@@ -602,6 +626,18 @@
           const r = await api(`/api/recommendations/${id}/coach`, { method: "POST", body: JSON.stringify({}) }).then(j);
           $(`chatlog-${id}`).lastChild.remove();
           chatAppend(id, "ai", r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""));
+        } catch (e) {
+          $(`chatlog-${id}`).lastChild.remove();
+          chatAppend(id, "ai", "Error: " + e.message);
+        }
+      };
+      window.memcheck = async (id) => {
+        chatAppend(id, "you", "Does this resemble a pattern I've struggled with?");
+        chatAppend(id, "ai", "…checking your history");
+        try {
+          const r = await api(`/api/recommendations/${id}/memory`, { method: "POST", body: JSON.stringify({}) }).then(j);
+          $(`chatlog-${id}`).lastChild.remove();
+          chatAppend(id, "ai", r.message || "(no memory data)");
         } catch (e) {
           $(`chatlog-${id}`).lastChild.remove();
           chatAppend(id, "ai", "Error: " + e.message);

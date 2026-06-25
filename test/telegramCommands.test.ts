@@ -10,6 +10,7 @@ import { KillSwitch } from "../src/safety/killSwitch.js";
 import { RuntimeSettings } from "../src/settings/runtimeSettings.js";
 import { TelegramService } from "../src/telegram/telegramService.js";
 import type { NewRecommendation } from "../src/execution/recommendations.js";
+import { TradeMemory } from "../src/memory/tradeMemory.js";
 
 /** A minimal risk-approved recommendation for discuss/whatif tests. */
 function sampleRec(): NewRecommendation {
@@ -43,8 +44,11 @@ async function tempEngine() {
   const audit = new AuditLog(join(dir, "audit.jsonl"));
   const killSwitch = new KillSwitch(config, audit, join(dir, "kill.json"));
   const engine = new AvrrioEngine(config);
-  const i = engine as unknown as { settings: RuntimeSettings; audit: AuditLog; killSwitch: KillSwitch };
+  const i = engine as unknown as {
+    settings: RuntimeSettings; audit: AuditLog; killSwitch: KillSwitch; memory: TradeMemory;
+  };
   i.settings = settings; i.audit = audit; i.killSwitch = killSwitch;
+  i.memory = new TradeMemory(join(dir, "memory.json")); // isolated, no repo writes
   return { engine };
 }
 
@@ -178,6 +182,26 @@ test("/coach reviews a trade against discipline rules (no AI key needed)", async
   const r = await engine.handleTelegramCommand("999", `/coach ${rec.ref}`);
   assert.match(r, /TRADE COACH/);
   assert.match(r, /Discipline grade/);
+});
+
+test("/memory shows habit stats once trades are recorded", async () => {
+  const { engine } = await tempEngine();
+  // Seed a weak breakout history (30% over 10) and a strong pullback (80%).
+  for (let k = 0; k < 3; k++) await engine.recordTradeOutcome({ symbol: "NQ", side: "long", pnl: 100, setup: "breakout" });
+  for (let k = 0; k < 7; k++) await engine.recordTradeOutcome({ symbol: "NQ", side: "long", pnl: -100, setup: "breakout" });
+  const r = await engine.handleTelegramCommand("999", "/memory");
+  assert.match(r, /AVRRIO MEMORY/);
+  assert.match(r, /breakout/);
+});
+
+test("/memory <ref> warns when a trade resembles a struggling pattern", async () => {
+  const { engine } = await tempEngine();
+  for (let k = 0; k < 3; k++) await engine.recordTradeOutcome({ symbol: "NQ", side: "long", pnl: 100, setup: "breakout" });
+  for (let k = 0; k < 7; k++) await engine.recordTradeOutcome({ symbol: "NQ", side: "long", pnl: -100, setup: "breakout" });
+  const rec = await engine.recommendations.add({ ...sampleRec(), setupName: "breakout" });
+  const r = await engine.handleTelegramCommand("999", `/memory ${rec.ref}`);
+  assert.match(r, /MEMORY CHECK/);
+  assert.match(r, /struggled with/i);
 });
 
 test("whatIf throws for an unknown ref", async () => {
