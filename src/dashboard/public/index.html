@@ -399,6 +399,9 @@
               <button class="btn-primary" id="proposeBtn" style="width: auto">
                 Generate recommendation
               </button>
+              <button class="btn-ghost" id="whyBtn" style="width: auto">
+                🔎 Why?
+              </button>
               <span
                 id="tradeNote"
                 class="tag"
@@ -407,6 +410,11 @@
             </div>
           </div>
           <div id="proposeErr" class="v-block" style="margin-top: 8px"></div>
+          <div
+            id="whyOut"
+            class="tag"
+            style="margin-top: 8px; white-space: pre-wrap"
+          ></div>
         </div>
 
         <div class="card">
@@ -1263,6 +1271,34 @@
           chatAppend(id, "ai", "Error: " + e.message);
         }
       };
+
+      $("whyBtn").addEventListener("click", async () => {
+        const sym = ($("symbol").value || "").trim().toUpperCase();
+        if (!sym) return;
+        $("whyOut").textContent = "⏳ Checking…";
+        try {
+          const e = await api(`/api/why/${encodeURIComponent(sym)}`).then(j);
+          const lines = [
+            `Score ${e.score}/100 (need ≥ ${e.minScore}) · ${e.direction}${e.side ? " (" + e.side + ")" : ""}`,
+            ...e.componentNotes.map(
+              (n) => `• ${n.label} ${n.value}/100 — ${n.note}`,
+            ),
+          ];
+          if (e.rewardRisk != null) {
+            lines.push(
+              `Reward/Risk ${e.rewardRisk.toFixed(2)}:1 (need ≥ ${e.minRewardRisk}:1)`,
+            );
+          }
+          lines.push(
+            e.qualifies
+              ? "✅ Clears every filter right now."
+              : "Blocking: " + e.blockers.join(" "),
+          );
+          $("whyOut").textContent = lines.join("\n");
+        } catch (err) {
+          $("whyOut").textContent = "Error: " + err.message;
+        }
+      });
 
       $("proposeBtn").addEventListener("click", async () => {
         $("proposeErr").textContent = "";
