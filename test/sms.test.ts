@@ -6,13 +6,25 @@ import { formatSignalSms } from "../src/sms/messages.js";
 import type { Recommendation } from "../src/execution/recommendations.js";
 
 test("parses approve commands (YES/APPROVE)", () => {
-  assert.deepEqual(parseSmsCommand("YES T-1042"), { type: "approve", ref: "T-1042" });
-  assert.deepEqual(parseSmsCommand("approve 1042"), { type: "approve", ref: "T-1042" });
+  assert.deepEqual(parseSmsCommand("YES T-1042"), {
+    type: "approve",
+    ref: "T-1042",
+  });
+  assert.deepEqual(parseSmsCommand("approve 1042"), {
+    type: "approve",
+    ref: "T-1042",
+  });
 });
 
 test("parses reject commands (NO/REJECT)", () => {
-  assert.deepEqual(parseSmsCommand("NO T-1042"), { type: "reject", ref: "T-1042" });
-  assert.deepEqual(parseSmsCommand("reject t1042"), { type: "reject", ref: "T-1042" });
+  assert.deepEqual(parseSmsCommand("NO T-1042"), {
+    type: "reject",
+    ref: "T-1042",
+  });
+  assert.deepEqual(parseSmsCommand("reject t1042"), {
+    type: "reject",
+    ref: "T-1042",
+  });
 });
 
 test("parses control commands", () => {
@@ -51,6 +63,8 @@ test("formatSignalSms includes ref, levels, and reply instructions", () => {
     riskAmount: 800,
     avrrioScore: 91,
     grade: null,
+    orderType: "limit" as const,
+    orderTypeRationale: "test fixture",
     consensus: { confidence: 0.84 },
   } as Recommendation;
   const text = formatSignalSms(rec);

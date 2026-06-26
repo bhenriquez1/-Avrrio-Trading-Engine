@@ -1,5 +1,6 @@
 import type { AvrrioConfig } from "../config.js";
 import type { Recommendation } from "../execution/recommendations.js";
+import { orderTypeLabel } from "../ai/orderSelection.js";
 import { findSymbol } from "../symbols/registry.js";
 import {
   isValidBotTokenShape,
@@ -246,6 +247,7 @@ export function formatAlert(rec: Recommendation): string {
     `Stop: ${rec.stopLoss}`,
     `Target: ${rec.target}`,
     `Size: ${rec.size}`,
+    `Order Type: ${orderTypeLabel(rec.orderType)} — ${rec.orderTypeRationale}`,
     "",
     `Risk/Reward: ${rr}`,
     `AI Consensus: ${(rec.consensus.confidence * 100).toFixed(0)}%`,

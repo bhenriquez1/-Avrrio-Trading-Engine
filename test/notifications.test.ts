@@ -27,6 +27,8 @@ function fakeRec(): Recommendation {
     violations: [],
     avrrioScore: 91,
     grade: null,
+    orderType: "limit",
+    orderTypeRationale: "test fixture",
     consensus: {
       recommendation: "long",
       confidence: 0.84,

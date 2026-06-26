@@ -25,6 +25,8 @@ function rec(over: Partial<Recommendation> = {}): Recommendation {
     violations: [],
     avrrioScore: 88,
     grade: null,
+    orderType: "limit",
+    orderTypeRationale: "test fixture",
     consensus: {
       recommendation: "long",
       confidence: 0.5,
@@ -102,7 +104,10 @@ test("buildTradeContext is secret-free and trade-scoped", () => {
 });
 
 test("zero-risk trade yields null dollar figures, never divides by zero", () => {
-  const r = computeWhatIf(rec({ entry: 100, stopLoss: 100, target: 110, riskAmount: 0 }), "target 120");
+  const r = computeWhatIf(
+    rec({ entry: 100, stopLoss: 100, target: 110, riskAmount: 0 }),
+    "target 120",
+  );
   assert.equal(r.base.riskAmount, null);
   assert.equal(r.adjusted.riskAmount, null);
   assert.equal(r.expectancy, null);

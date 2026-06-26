@@ -9,6 +9,13 @@
 export type Side = "long" | "short";
 
 /**
+ * How an order is submitted to the broker: a resting limit at the entry
+ * price, a stop that triggers once price confirms a breakout level, or an
+ * immediate market fill when entry is already at the current price.
+ */
+export type OrderType = "limit" | "stop_market" | "market";
+
+/**
  * How the engine acts on a qualifying setup:
  * - `advisor`            — AI never places orders; it only alerts. You enter
  *                          manually in TopstepX. (Safest.)
@@ -179,6 +186,8 @@ export interface OrderRequest {
   entry: number;
   stopLoss: number;
   target: number;
+  /** How the order should be submitted (limit / stop market / market). */
+  orderType: OrderType;
 }
 
 export interface OrderResult {

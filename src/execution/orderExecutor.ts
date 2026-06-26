@@ -66,6 +66,7 @@ export class OrderExecutor {
         entry: rec.entry,
         stopLoss: rec.stopLoss,
         target: rec.target,
+        orderType: rec.orderType,
       },
       live,
     );

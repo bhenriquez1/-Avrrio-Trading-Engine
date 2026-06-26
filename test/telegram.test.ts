@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadConfig } from "../src/config.js";
-import { TelegramService, formatAlert } from "../src/telegram/telegramService.js";
+import {
+  TelegramService,
+  formatAlert,
+} from "../src/telegram/telegramService.js";
 import type { Recommendation } from "../src/execution/recommendations.js";
 
 function rec(): Recommendation {
@@ -22,7 +25,15 @@ function rec(): Recommendation {
     violations: [],
     avrrioScore: 95,
     grade: null,
-    consensus: { recommendation: "long", confidence: 0.92, agreement: 2, available: 2, opinions: [] },
+    orderType: "limit",
+    orderTypeRationale: "test fixture",
+    consensus: {
+      recommendation: "long",
+      confidence: 0.92,
+      agreement: 2,
+      available: 2,
+      opinions: [],
+    },
     news: { blocked: false, reason: "clear" },
     autoEligible: false,
     status: "pending",
@@ -79,15 +90,25 @@ test("telegram enabled only when token + chat id + flag set", () => {
   assert.equal(new TelegramService(config).enabled, false);
   config.notifications.telegram = { enabled: true, botToken: "t", chatId: "1" };
   assert.equal(new TelegramService(config).enabled, true);
-  config.notifications.telegram = { enabled: false, botToken: "t", chatId: "1" };
+  config.notifications.telegram = {
+    enabled: false,
+    botToken: "t",
+    chatId: "1",
+  };
   assert.equal(new TelegramService(config).enabled, false);
 });
 
 test("missing() names exactly which TELEGRAM_* settings are unset", () => {
   const config = loadConfig();
   // Only the enable flag is off (common gotcha): token + chat id are set.
-  config.notifications.telegram = { enabled: false, botToken: "t", chatId: "1" };
-  assert.deepEqual(new TelegramService(config).missing(), ["TELEGRAM_ENABLED=true"]);
+  config.notifications.telegram = {
+    enabled: false,
+    botToken: "t",
+    chatId: "1",
+  };
+  assert.deepEqual(new TelegramService(config).missing(), [
+    "TELEGRAM_ENABLED=true",
+  ]);
   // Enabled but chat id missing.
   config.notifications.telegram = { enabled: true, botToken: "t", chatId: "" };
   assert.deepEqual(new TelegramService(config).missing(), ["TELEGRAM_CHAT_ID"]);
@@ -98,7 +119,11 @@ test("missing() names exactly which TELEGRAM_* settings are unset", () => {
 
 test("sendTest reports the precise missing settings without exposing values", async () => {
   const config = loadConfig();
-  config.notifications.telegram = { enabled: false, botToken: "supersecrettoken", chatId: "1" };
+  config.notifications.telegram = {
+    enabled: false,
+    botToken: "supersecrettoken",
+    chatId: "1",
+  };
   const r = await new TelegramService(config).sendTest();
   assert.equal(r.ok, false);
   assert.match(r.info, /TELEGRAM_ENABLED=true/);
@@ -109,7 +134,11 @@ test("sendTest reports the precise missing settings without exposing values", as
 
 test("presence() masks the token and never leaks values", () => {
   const config = loadConfig();
-  config.notifications.telegram = { enabled: true, botToken: "123456789:AAHsupersecrettoken_abcdefghij", chatId: "12345" };
+  config.notifications.telegram = {
+    enabled: true,
+    botToken: "123456789:AAHsupersecrettoken_abcdefghij",
+    chatId: "12345",
+  };
   const p = new TelegramService(config).presence();
   assert.equal(p.TELEGRAM_ENABLED, "true");
   assert.equal(p.TELEGRAM_CHAT_ID, "set");
@@ -121,7 +150,11 @@ test("presence() masks the token and never leaks values", () => {
 
 test("presence() flags a malformed (colon-less) bot token", () => {
   const config = loadConfig();
-  config.notifications.telegram = { enabled: true, botToken: "AAAH5Habugxulk-s4MwjEcADrYG94oV6awUY", chatId: "12345" };
+  config.notifications.telegram = {
+    enabled: true,
+    botToken: "AAAH5Habugxulk-s4MwjEcADrYG94oV6awUY",
+    chatId: "12345",
+  };
   const token = new TelegramService(config).presence().TELEGRAM_BOT_TOKEN ?? "";
   assert.match(token, /INVALID format/);
 });
@@ -129,7 +162,11 @@ test("presence() flags a malformed (colon-less) bot token", () => {
 test("sendTest rejects a malformed bot token without leaking it", async () => {
   const config = loadConfig();
   // Colon-less token (Brian's case): the numeric <bot_id>: prefix is missing.
-  config.notifications.telegram = { enabled: true, botToken: "AAAH5Habugxulk-s4MwjEcADrYG94oV6awUY", chatId: "12345" };
+  config.notifications.telegram = {
+    enabled: true,
+    botToken: "AAAH5Habugxulk-s4MwjEcADrYG94oV6awUY",
+    chatId: "12345",
+  };
   const r = await new TelegramService(config).sendTest();
   assert.equal(r.ok, false);
   assert.match(r.info, /Invalid bot token format/);
@@ -138,10 +175,18 @@ test("sendTest rejects a malformed bot token without leaking it", async () => {
 
 test("parseCallback extracts a button press; unauthorized chat is rejected", async () => {
   const config = loadConfig();
-  config.notifications.telegram = { enabled: true, botToken: "t", chatId: "999" };
+  config.notifications.telegram = {
+    enabled: true,
+    botToken: "t",
+    chatId: "999",
+  };
   const svc = new TelegramService(config);
   const cb = svc.parseCallback({
-    callback_query: { id: "cq1", data: "a|T-2481", message: { message_id: 5, chat: { id: 123 } } },
+    callback_query: {
+      id: "cq1",
+      data: "a|T-2481",
+      message: { message_id: 5, chat: { id: 123 } },
+    },
   });
   assert.ok(cb);
   assert.equal(cb?.data, "a|T-2481");

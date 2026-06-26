@@ -417,14 +417,20 @@ export class TopstepClient {
       };
     }
     await this.ensureAuth();
+    const typeMap: Record<OrderRequest["orderType"], string> = {
+      limit: "Limit",
+      stop_market: "Stop",
+      market: "Market",
+    };
     const res = await this.request("/api/Order/place", {
       method: "POST",
       body: JSON.stringify({
         symbol: order.symbol,
         side: order.side === "long" ? "Buy" : "Sell",
         size: order.size,
-        type: "Limit",
-        limitPrice: order.entry,
+        type: typeMap[order.orderType],
+        ...(order.orderType === "limit" ? { limitPrice: order.entry } : {}),
+        ...(order.orderType === "stop_market" ? { stopPrice: order.entry } : {}),
         stopLoss: order.stopLoss,
         takeProfit: order.target,
       }),

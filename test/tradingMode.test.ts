@@ -47,7 +47,13 @@ test("advisor mode blocks order execution on every path", async () => {
   const store = new RecommendationStore(join(dir, "recs.json"));
   const killSwitch = new KillSwitch(config, audit, join(dir, "kill.json"));
   const client = new TopstepClient(config); // offline/demo
-  const executor = new OrderExecutor(settings, client, killSwitch, store, audit);
+  const executor = new OrderExecutor(
+    settings,
+    client,
+    killSwitch,
+    store,
+    audit,
+  );
 
   const rec = await store.add({
     setupName: null,
@@ -63,14 +69,25 @@ test("advisor mode blocks order execution on every path", async () => {
     violations: [],
     avrrioScore: 90,
     grade: null,
-    consensus: { recommendation: "long", confidence: 0.9, agreement: 2, available: 2, opinions: [] },
+    orderType: "limit" as const,
+    orderTypeRationale: "test fixture",
+    consensus: {
+      recommendation: "long",
+      confidence: 0.9,
+      agreement: 2,
+      available: 2,
+      opinions: [],
+    },
     news: { blocked: false, reason: "clear" },
     autoEligible: false,
     expiresAt: null,
     approvalMode: null,
   });
 
-  await assert.rejects(() => executor.execute(rec, "operator"), /advisor mode/i);
+  await assert.rejects(
+    () => executor.execute(rec, "operator"),
+    /advisor mode/i,
+  );
   // Advisor mode must NOT corrupt the recommendation — it stays actionable
   // (pending) so the operator can still enter it manually in TopstepX.
   assert.equal(store.get(rec.id)?.status, "pending");
@@ -91,7 +108,15 @@ test("advisor mode blocks order execution on every path", async () => {
     violations: [],
     avrrioScore: 90,
     grade: null,
-    consensus: { recommendation: "long", confidence: 0.9, agreement: 2, available: 2, opinions: [] },
+    orderType: "limit" as const,
+    orderTypeRationale: "test fixture",
+    consensus: {
+      recommendation: "long",
+      confidence: 0.9,
+      agreement: 2,
+      available: 2,
+      opinions: [],
+    },
     news: { blocked: false, reason: "clear" },
     autoEligible: false,
     expiresAt: null,
@@ -106,10 +131,15 @@ test("configWarnings reflects the runtime mode override, not just env default", 
   const config = loadConfig();
   // Default (telegram_approval) emits neither full-auto nor advisor warning.
   const base = configWarnings(config);
-  assert.equal(base.some((w) => w.includes("full_auto")), false);
+  assert.equal(
+    base.some((w) => w.includes("full_auto")),
+    false,
+  );
   // Runtime override to full_auto surfaces the auto-execute safety warning.
   const auto = configWarnings(config, { tradingMode: "full_auto" });
-  assert.ok(auto.some((w) => w.includes("full_auto") && w.includes("auto-execute")));
+  assert.ok(
+    auto.some((w) => w.includes("full_auto") && w.includes("auto-execute")),
+  );
   // Runtime override to advisor surfaces the alerts-only warning.
   const adv = configWarnings(config, { tradingMode: "advisor" });
   assert.ok(adv.some((w) => w.includes("advisor") && w.includes("NOT place")));

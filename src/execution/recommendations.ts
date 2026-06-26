@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { ProviderOpinion } from "../ai/consensus.js";
 import type { TradeGradeResult } from "../ai/tradeGrade.js";
-import type { OrderResult, RuleViolation, Side } from "../types.js";
+import type { OrderResult, OrderType, RuleViolation, Side } from "../types.js";
 
 export type RecommendationStatus =
   | "pending" // awaiting operator approval
@@ -44,6 +44,9 @@ export interface Recommendation {
   avrrioScore: number | null;
   /** Confidence/Grade/Trade-Quality-Score breakdown at proposal time, or null. */
   grade: TradeGradeResult | null;
+  /** Auto-selected order type (never defaults to market) and why. */
+  orderType: OrderType;
+  orderTypeRationale: string;
   consensus: {
     recommendation: Side | "no-trade";
     confidence: number;
