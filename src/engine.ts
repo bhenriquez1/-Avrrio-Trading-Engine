@@ -48,7 +48,11 @@ import {
 } from "./scanner/scanner.js";
 import { KillSwitch } from "./safety/killSwitch.js";
 import { findSetup, withinAllowedHours } from "./setups/index.js";
-import { findSymbol, isTradable } from "./symbols/registry.js";
+import { findSymbol, isTradable, SYMBOLS } from "./symbols/registry.js";
+import {
+  extractMentionedSymbols,
+  mentionsOpenPositions,
+} from "./ai/conversationContext.js";
 import { TradeJournal } from "./journal/tradeJournal.js";
 import { TopstepClient } from "./topstep/client.js";
 import { sendSms, samePhone, smsMissing } from "./sms/smsClient.js";
@@ -621,7 +625,7 @@ export class AvrrioEngine {
         break;
       case "/ask":
         reply = arg
-          ? await this.claude.ask(arg, await this.askContext())
+          ? await this.claude.ask(arg, await this.buildConversationContext(arg))
           : "Usage: /ask <your question> — or just type your question.";
         break;
       case "/discuss":
@@ -915,6 +919,61 @@ export class AvrrioEngine {
       `TopstepX: ${s.connected ? "connected" : "not connected"}, account ${s.accountId}, day P&L $${s.dailyPnL}, buying power $${s.availableBuyingPower}.`,
       `Emergency Stop: ${this.killSwitch.isEngaged() ? "engaged" : "clear"}. Pending approvals: ${this.recommendations.pending().length}.`,
     ].join("\n");
+  }
+
+  /**
+   * Enriches the base /ask context with whatever the operator's free-form
+   * message is actually about: any known symbols mentioned by name (live
+   * snapshot/score/news) and, if they asked about "my position(s)", a summary
+   * of every open position. Lets Telegram conversation work naturally
+   * ("what about NQ right now?", "how's my position doing?") without
+   * requiring a rigid "/discuss T-1042" reference. Read-only — never trades.
+   */
+  async buildConversationContext(text: string): Promise<string> {
+    const lines = [await this.askContext()];
+
+    const symbols = extractMentionedSymbols(
+      text,
+      SYMBOLS.map((s) => s.symbol),
+    ).slice(0, 3);
+    for (const symbol of symbols) {
+      try {
+        const snapshot = await this.snapshot(symbol);
+        const news = await this.news.assess(symbol);
+        const { score } = scoreSnapshot(snapshot, news.blocked);
+        lines.push(
+          "",
+          `Symbol mentioned: ${symbol} (${findSymbol(symbol)?.name ?? symbol}, ${isTradable(symbol) ? "tradable futures" : "watchlist-only"})`,
+          `Last: ${snapshot.quote.last} · Avrrio Score: ${score}/100 · Trend: ${snapshot.structure.trend} · News: ${news.blocked ? news.reason || "blackout" : "clear"}`,
+        );
+        const open = this.recommendations
+          .openPositions()
+          .filter((r) => r.symbol === symbol);
+        for (const r of open) {
+          lines.push(
+            `Open position on ${symbol}: ${r.side} ${r.size} @ ${r.entry}, stop ${r.stopLoss}, target ${r.target} (${r.ref}).`,
+          );
+        }
+      } catch {
+        /* snapshot/news optional — context degrades gracefully */
+      }
+    }
+
+    if (mentionsOpenPositions(text) || symbols.length === 0) {
+      const open = this.recommendations.openPositions();
+      if (open.length) {
+        lines.push("", "Open positions:");
+        for (const r of open) {
+          lines.push(
+            `• ${r.ref} ${r.symbol} ${r.side} ${r.size} @ ${r.entry}, stop ${r.stopLoss}, target ${r.target}.`,
+          );
+        }
+      } else if (mentionsOpenPositions(text)) {
+        lines.push("", "No open positions right now.");
+      }
+    }
+
+    return lines.join("\n");
   }
 
   /**
@@ -2295,7 +2354,7 @@ const TELEGRAM_HELP = [
   "/last_signal — the most recent recommendation + last scan summary",
   "/risk — risk limits and current usage",
   "/settings — current mode, scanner cadence, thresholds, timezone",
-  "/ask <question> (or just type) — ask the AI; advisory only, cannot trade",
+  '/ask <question> (or just type) — ask the AI; advisory only, cannot trade. Mention a symbol (e.g. "what about NQ?") or "my position" and the answer is grounded in that live data.',
   "/discuss <T-ref> <question> — per-trade chat (e.g. why not buy now?)",
   "/whatif <T-ref> <scenario> — recompute R:R (e.g. move stop to 20010, one contract)",
   "/debate <T-ref|symbol> — Bull case vs Bear case + final verdict",
