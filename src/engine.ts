@@ -25,6 +25,11 @@ import {
 } from "./ai/tradeGrade.js";
 import { selectOrderType } from "./ai/orderSelection.js";
 import { assessPosition, managementText } from "./ai/tradeManagement.js";
+import {
+  explainSymbol,
+  explainSymbolText,
+  type SymbolExplanation,
+} from "./ai/explainWhy.js";
 import { TradeMemory, type MemoryAssessment } from "./memory/tradeMemory.js";
 import { NewsReader } from "./news/newsReader.js";
 import { NotificationManager } from "./notifications/notifier.js";
@@ -37,6 +42,7 @@ import { Scheduler, type NearMiss } from "./scheduler/scheduler.js";
 import {
   Scanner,
   scoreSnapshot,
+  suggestLevels,
   type ScanOptions,
   type ScanResult,
 } from "./scanner/scanner.js";
@@ -586,8 +592,12 @@ export class AvrrioEngine {
         break;
       case "/why":
       case "/why_no_trade":
-        await this.scheduler.runScanCycle(); // fresh scan, then explain
-        reply = await this.scanExplanation();
+        if (arg) {
+          reply = await this.explainSymbolText(arg);
+        } else {
+          await this.scheduler.runScanCycle(); // fresh scan, then explain
+          reply = await this.scanExplanation();
+        }
         break;
       case "/status":
         reply = await this.cmdStatus();
@@ -1198,6 +1208,58 @@ export class AvrrioEngine {
     await this.recommendations.update(rec);
     await this.audit.log("trade.management.closed", actor, { ref: rec.ref });
     return rec;
+  }
+
+  /**
+   * Full per-component "why" breakdown for any single symbol — not just the
+   * top 3 near-misses a scan cycle tracks. Read-only — never proposes a trade.
+   */
+  async explainSymbol(symbolInput: string): Promise<SymbolExplanation> {
+    const symbol = symbolInput.trim().toUpperCase();
+    const snapshot = await this.snapshot(symbol);
+    const news = await this.news.assess(symbol);
+    const { score, components } = scoreSnapshot(snapshot, news.blocked);
+    const tradable = isTradable(symbol);
+    const direction =
+      snapshot.structure.trend === "up"
+        ? "bullish"
+        : snapshot.structure.trend === "down"
+          ? "bearish"
+          : "reversal";
+    const side: Side | null =
+      direction === "bullish"
+        ? "long"
+        : direction === "bearish"
+          ? "short"
+          : null;
+
+    let rewardRisk: number | null = null;
+    let duplicateOpen = false;
+    if (side && tradable) {
+      const levels = suggestLevels(snapshot, side);
+      rewardRisk =
+        Math.abs(levels.target - levels.entry) /
+        Math.max(1e-9, Math.abs(levels.entry - levels.stopLoss));
+      duplicateOpen = this.recommendations.hasOpenDuplicate(symbol, side);
+    }
+
+    return explainSymbol({
+      symbol,
+      tradable,
+      score,
+      minScore: this.config.notifications.opportunityAlertScore,
+      components,
+      direction,
+      newsBlocked: news.blocked,
+      newsReason: news.reason,
+      rewardRisk,
+      minRewardRisk: this.config.scheduler.minRewardRisk,
+      duplicateOpen,
+    });
+  }
+
+  async explainSymbolText(symbol: string): Promise<string> {
+    return explainSymbolText(await this.explainSymbol(symbol));
   }
 
   /**
@@ -2227,6 +2289,7 @@ const TELEGRAM_HELP = [
   "🤖 Avrrio Trade AI — commands",
   "/scan (or /scan now) — run a scan now; alerts if a setup qualifies, else explains why",
   "/why — why nothing qualified in the latest scan",
+  '/why <SYMBOL> — full breakdown for one symbol (e.g. "/why MNQ"), even if it wasn\'t a near-miss',
   "/status — mode, account, P&L, positions, kill switch, scheduler, AI",
   "/diag — full pipeline diagnostics (scheduler, Telegram, AI, TopstepX)",
   "/last_signal — the most recent recommendation + last scan summary",

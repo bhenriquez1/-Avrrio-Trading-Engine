@@ -141,6 +141,16 @@ async function start() {
     ),
   );
 
+  // Explain WHY a specific symbol does/doesn't qualify right now (any symbol,
+  // not just the scan's top near-misses). Read-only — never proposes a trade.
+  app.get(
+    "/api/why/:symbol",
+    guard,
+    wrap(async (req, res) =>
+      res.json(await engine.explainSymbol(req.params.symbol ?? "")),
+    ),
+  );
+
   app.get("/api/symbols", guard, (_req, res) => res.json(SYMBOLS));
 
   app.get(
