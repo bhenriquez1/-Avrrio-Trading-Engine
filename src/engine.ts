@@ -23,6 +23,7 @@ import {
   tradeGradeText,
   type TradeGradeResult,
 } from "./ai/tradeGrade.js";
+import { selectOrderType } from "./ai/orderSelection.js";
 import { TradeMemory, type MemoryAssessment } from "./memory/tradeMemory.js";
 import { NewsReader } from "./news/newsReader.js";
 import { NotificationManager } from "./notifications/notifier.js";
@@ -333,6 +334,10 @@ export class AvrrioEngine {
       },
       this.config.ai.qualityThreshold,
     );
+    const orderSelection = selectOrderType(
+      { side: input.side, entry: input.entry },
+      snapshot.quote.last,
+    );
 
     const consensusAgrees =
       consensus.recommendation === input.side &&
@@ -360,6 +365,8 @@ export class AvrrioEngine {
       violations: assessment.violations,
       avrrioScore,
       grade,
+      orderType: orderSelection.orderType,
+      orderTypeRationale: orderSelection.rationale,
       consensus: {
         recommendation: consensus.recommendation,
         confidence: consensus.confidence,

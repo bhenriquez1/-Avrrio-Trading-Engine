@@ -28,7 +28,15 @@ function sampleRec(): NewRecommendation {
     violations: [],
     avrrioScore: 88,
     grade: null,
-    consensus: { recommendation: "long", confidence: 0.5, agreement: 2, available: 3, opinions: [] },
+    orderType: "limit" as const,
+    orderTypeRationale: "test fixture",
+    consensus: {
+      recommendation: "long",
+      confidence: 0.5,
+      agreement: 2,
+      available: 3,
+      opinions: [],
+    },
     news: { blocked: false, reason: "" },
     autoEligible: false,
     expiresAt: null,
@@ -40,24 +48,40 @@ async function tempEngine() {
   const dir = await mkdtemp(join(tmpdir(), "avrrio-tg-"));
   const config = loadConfig();
   // Authorized chat = 999; telegram disabled so sendText() no-ops (no network).
-  config.notifications.telegram = { enabled: false, botToken: "", chatId: "999" };
+  config.notifications.telegram = {
+    enabled: false,
+    botToken: "",
+    chatId: "999",
+  };
   const settings = new RuntimeSettings(config, join(dir, "settings.json"));
   const audit = new AuditLog(join(dir, "audit.jsonl"));
   const killSwitch = new KillSwitch(config, audit, join(dir, "kill.json"));
   const engine = new AvrrioEngine(config);
   const i = engine as unknown as {
-    settings: RuntimeSettings; audit: AuditLog; killSwitch: KillSwitch; memory: TradeMemory;
+    settings: RuntimeSettings;
+    audit: AuditLog;
+    killSwitch: KillSwitch;
+    memory: TradeMemory;
   };
-  i.settings = settings; i.audit = audit; i.killSwitch = killSwitch;
+  i.settings = settings;
+  i.audit = audit;
+  i.killSwitch = killSwitch;
   i.memory = new TradeMemory(join(dir, "memory.json")); // isolated, no repo writes
   return { engine };
 }
 
 test("parseMessage + isAuthorized", () => {
   const config = loadConfig();
-  config.notifications.telegram = { enabled: true, botToken: "123:abc", chatId: "999" };
+  config.notifications.telegram = {
+    enabled: true,
+    botToken: "123:abc",
+    chatId: "999",
+  };
   const svc = new TelegramService(config);
-  assert.deepEqual(svc.parseMessage({ message: { chat: { id: 999 }, text: "/status" } }), { chatId: "999", text: "/status" });
+  assert.deepEqual(
+    svc.parseMessage({ message: { chat: { id: 999 }, text: "/status" } }),
+    { chatId: "999", text: "/status" },
+  );
   assert.equal(svc.parseMessage({ message: { chat: { id: 1 } } }), null); // no text
   assert.equal(svc.isAuthorized("999"), true);
   assert.equal(svc.isAuthorized("123"), false);
@@ -102,52 +126,94 @@ test("/ask is advisory only and never trades (offline stub)", async () => {
 test("/help lists commands; unknown command shows help", async () => {
   const { engine } = await tempEngine();
   assert.match(await engine.handleTelegramCommand("999", "/help"), /commands/i);
-  assert.match(await engine.handleTelegramCommand("999", "/bogus"), /Unknown command/);
+  assert.match(
+    await engine.handleTelegramCommand("999", "/bogus"),
+    /Unknown command/,
+  );
 });
 
 test("/approve and /reject require a trade id", async () => {
   const { engine } = await tempEngine();
-  assert.match(await engine.handleTelegramCommand("999", "/approve"), /Usage: \/approve/);
-  assert.match(await engine.handleTelegramCommand("999", "/reject"), /Usage: \/reject/);
+  assert.match(
+    await engine.handleTelegramCommand("999", "/approve"),
+    /Usage: \/approve/,
+  );
+  assert.match(
+    await engine.handleTelegramCommand("999", "/reject"),
+    /Usage: \/reject/,
+  );
 });
 
 test("new commands respond (scan/why/diag/last_signal/risk/settings/pause)", async () => {
   const { engine } = await tempEngine();
-  assert.match(await engine.handleTelegramCommand("999", "/diag"), /PIPELINE DIAGNOSTICS/);
-  assert.match(await engine.handleTelegramCommand("999", "/last_signal"), /LAST SIGNAL/);
-  assert.match(await engine.handleTelegramCommand("999", "/risk"), /RISK LIMITS/);
-  assert.match(await engine.handleTelegramCommand("999", "/settings"), /SETTINGS/);
-  assert.match(await engine.handleTelegramCommand("999", "/why"), /WHY NO TRADE/);
+  assert.match(
+    await engine.handleTelegramCommand("999", "/diag"),
+    /PIPELINE DIAGNOSTICS/,
+  );
+  assert.match(
+    await engine.handleTelegramCommand("999", "/last_signal"),
+    /LAST SIGNAL/,
+  );
+  assert.match(
+    await engine.handleTelegramCommand("999", "/risk"),
+    /RISK LIMITS/,
+  );
+  assert.match(
+    await engine.handleTelegramCommand("999", "/settings"),
+    /SETTINGS/,
+  );
+  assert.match(
+    await engine.handleTelegramCommand("999", "/why"),
+    /WHY NO TRADE/,
+  );
   // /scan runs a cycle and reports (demo data: no qualifying setup).
-  assert.match(await engine.handleTelegramCommand("999", "/scan now"), /Scan complete/);
+  assert.match(
+    await engine.handleTelegramCommand("999", "/scan now"),
+    /Scan complete/,
+  );
 });
 
 test("/pause then /resume toggles the scanner", async () => {
   const { engine } = await tempEngine();
   assert.match(await engine.handleTelegramCommand("999", "/pause"), /paused/i);
   assert.equal(engine.scheduler.enabled, false);
-  assert.match(await engine.handleTelegramCommand("999", "/resume"), /resumed/i);
+  assert.match(
+    await engine.handleTelegramCommand("999", "/resume"),
+    /resumed/i,
+  );
   assert.equal(engine.scheduler.enabled, true);
   engine.scheduler.stop(); // clear the setInterval so the test process can exit
 });
 
 test("plain (non-slash) text is routed to the AI assistant (advisory)", async () => {
   const { engine } = await tempEngine();
-  const r = await engine.handleTelegramCommand("999", "Why no trade right now?");
+  const r = await engine.handleTelegramCommand(
+    "999",
+    "Why no trade right now?",
+  );
   // No ANTHROPIC_API_KEY in tests -> advisory offline stub, never trades.
   assert.match(r, /offline|advisory|Claude/i);
 });
 
 test("/discuss and /whatif show usage without args", async () => {
   const { engine } = await tempEngine();
-  assert.match(await engine.handleTelegramCommand("999", "/discuss"), /Usage: \/discuss/);
-  assert.match(await engine.handleTelegramCommand("999", "/whatif"), /Usage: \/whatif/);
+  assert.match(
+    await engine.handleTelegramCommand("999", "/discuss"),
+    /Usage: \/discuss/,
+  );
+  assert.match(
+    await engine.handleTelegramCommand("999", "/whatif"),
+    /Usage: \/whatif/,
+  );
 });
 
 test("/discuss a specific trade is advisory only (offline stub)", async () => {
   const { engine } = await tempEngine();
   const rec = await engine.recommendations.add(sampleRec());
-  const r = await engine.handleTelegramCommand("999", `/discuss ${rec.ref} why not buy now?`);
+  const r = await engine.handleTelegramCommand(
+    "999",
+    `/discuss ${rec.ref} why not buy now?`,
+  );
   assert.match(r, new RegExp(rec.ref));
   // No ANTHROPIC_API_KEY in tests -> advisory offline stub, never trades.
   assert.match(r, /offline|advisory|Claude/i);
@@ -156,7 +222,10 @@ test("/discuss a specific trade is advisory only (offline stub)", async () => {
 test("/whatif recomputes R:R deterministically (no AI key needed)", async () => {
   const { engine } = await tempEngine();
   const rec = await engine.recommendations.add(sampleRec());
-  const r = await engine.handleTelegramCommand("999", `/whatif ${rec.ref} move my stop to 19990`);
+  const r = await engine.handleTelegramCommand(
+    "999",
+    `/whatif ${rec.ref} move my stop to 19990`,
+  );
   assert.match(r, /what-if/i);
   assert.match(r, /R:R/);
 });
@@ -188,8 +257,20 @@ test("/coach reviews a trade against discipline rules (no AI key needed)", async
 test("/memory shows habit stats once trades are recorded", async () => {
   const { engine } = await tempEngine();
   // Seed a weak breakout history (30% over 10) and a strong pullback (80%).
-  for (let k = 0; k < 3; k++) await engine.recordTradeOutcome({ symbol: "NQ", side: "long", pnl: 100, setup: "breakout" });
-  for (let k = 0; k < 7; k++) await engine.recordTradeOutcome({ symbol: "NQ", side: "long", pnl: -100, setup: "breakout" });
+  for (let k = 0; k < 3; k++)
+    await engine.recordTradeOutcome({
+      symbol: "NQ",
+      side: "long",
+      pnl: 100,
+      setup: "breakout",
+    });
+  for (let k = 0; k < 7; k++)
+    await engine.recordTradeOutcome({
+      symbol: "NQ",
+      side: "long",
+      pnl: -100,
+      setup: "breakout",
+    });
   const r = await engine.handleTelegramCommand("999", "/memory");
   assert.match(r, /AVRRIO MEMORY/);
   assert.match(r, /breakout/);
@@ -197,9 +278,24 @@ test("/memory shows habit stats once trades are recorded", async () => {
 
 test("/memory <ref> warns when a trade resembles a struggling pattern", async () => {
   const { engine } = await tempEngine();
-  for (let k = 0; k < 3; k++) await engine.recordTradeOutcome({ symbol: "NQ", side: "long", pnl: 100, setup: "breakout" });
-  for (let k = 0; k < 7; k++) await engine.recordTradeOutcome({ symbol: "NQ", side: "long", pnl: -100, setup: "breakout" });
-  const rec = await engine.recommendations.add({ ...sampleRec(), setupName: "breakout" });
+  for (let k = 0; k < 3; k++)
+    await engine.recordTradeOutcome({
+      symbol: "NQ",
+      side: "long",
+      pnl: 100,
+      setup: "breakout",
+    });
+  for (let k = 0; k < 7; k++)
+    await engine.recordTradeOutcome({
+      symbol: "NQ",
+      side: "long",
+      pnl: -100,
+      setup: "breakout",
+    });
+  const rec = await engine.recommendations.add({
+    ...sampleRec(),
+    setupName: "breakout",
+  });
   const r = await engine.handleTelegramCommand("999", `/memory ${rec.ref}`);
   assert.match(r, /MEMORY CHECK/);
   assert.match(r, /struggled with/i);
@@ -207,13 +303,18 @@ test("/memory <ref> warns when a trade resembles a struggling pattern", async ()
 
 test("whatIf throws for an unknown ref", async () => {
   const { engine } = await tempEngine();
-  await assert.rejects(() => engine.whatIf("T-9999", "move stop to 1"), /No recommendation/);
+  await assert.rejects(
+    () => engine.whatIf("T-9999", "move stop to 1"),
+    /No recommendation/,
+  );
 });
 
 test("pipelineDiagnostics reports the key pipeline stages", async () => {
   const { engine } = await tempEngine();
   const d = engine.pipelineDiagnostics();
-  assert.ok("scheduler" in d && "telegram" in d && "ai" in d && "topstepx" in d);
+  assert.ok(
+    "scheduler" in d && "telegram" in d && "ai" in d && "topstepx" in d,
+  );
   assert.equal(typeof d.scheduler.intervalMinutes, "number");
   assert.equal(d.trading.paper, !d.trading.liveTrading);
   assert.match(d.process, /scheduler runs in-process/i);

@@ -93,3 +93,17 @@ test("propose() always attaches a grade breakdown to the recommendation", async 
   assert.ok(typeof rec.grade?.qualityScore === "number");
   assert.ok(["A+", "A", "B", "C", "D"].includes(rec.grade!.grade));
 });
+
+test("propose() always attaches an order type and rationale (never a bare default)", async () => {
+  const { engine } = await tempEngine(90);
+  const rec = await engine.propose({
+    symbol: "NQ",
+    side: "long",
+    size: 1,
+    entry: 20000,
+    stopLoss: 19980,
+    target: 20060,
+  });
+  assert.ok(["limit", "stop_market", "market"].includes(rec.orderType));
+  assert.ok(rec.orderTypeRationale.length > 0, "expected a human-readable rationale");
+});
