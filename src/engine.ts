@@ -24,6 +24,11 @@ import {
   type TradeGradeResult,
 } from "./ai/tradeGrade.js";
 import { selectOrderType } from "./ai/orderSelection.js";
+import {
+  rankMarket,
+  rankMarketsText,
+  type MarketRank,
+} from "./ai/rankMarkets.js";
 import { assessPosition, managementText } from "./ai/tradeManagement.js";
 import {
   explainSymbol,
@@ -593,6 +598,11 @@ export class AvrrioEngine {
       case "/scan_now":
       case "/scannow":
         reply = await this.cmdScanNow();
+        break;
+      case "/rank":
+      case "/ranks":
+      case "/rank_markets":
+        reply = await this.rankMarketsText();
         break;
       case "/why":
       case "/why_no_trade":
@@ -1319,6 +1329,66 @@ export class AvrrioEngine {
 
   async explainSymbolText(symbol: string): Promise<string> {
     return explainSymbolText(await this.explainSymbol(symbol));
+  }
+
+  /**
+   * Ranks EVERY symbol in the universe by Avrrio Score, best to worst — not
+   * just the top alerts or near-misses. Read-only; never proposes a trade.
+   */
+  async rankMarkets(): Promise<MarketRank[]> {
+    const minScore = this.config.notifications.opportunityAlertScore;
+    const minRR = this.config.scheduler.minRewardRisk;
+    const results = await this.scan(); // already sorted by score, desc.
+
+    const ranks: MarketRank[] = [];
+    let rank = 0;
+    for (const r of results) {
+      rank++;
+      const side: Side | null =
+        r.direction === "bullish"
+          ? "long"
+          : r.direction === "bearish"
+            ? "short"
+            : null;
+
+      let rewardRisk: number | null = null;
+      let duplicateOpen = false;
+      if (side && r.tradable) {
+        try {
+          const snapshot = await this.snapshot(r.symbol);
+          const levels = suggestLevels(snapshot, side);
+          rewardRisk =
+            Math.abs(levels.target - levels.entry) /
+            Math.max(1e-9, Math.abs(levels.entry - levels.stopLoss));
+          duplicateOpen = this.recommendations.hasOpenDuplicate(r.symbol, side);
+        } catch {
+          /* reward/risk optional if a snapshot fetch fails */
+        }
+      }
+
+      ranks.push(
+        rankMarket(
+          {
+            symbol: r.symbol,
+            name: r.name,
+            tradable: r.tradable,
+            score: r.score,
+            minScore,
+            direction: r.direction,
+            newsBlocked: r.newsBlocked,
+            rewardRisk,
+            minRewardRisk: minRR,
+            duplicateOpen,
+          },
+          rank,
+        ),
+      );
+    }
+    return ranks;
+  }
+
+  async rankMarketsText(): Promise<string> {
+    return rankMarketsText(await this.rankMarkets());
   }
 
   /**
@@ -2347,6 +2417,7 @@ export class AvrrioEngine {
 const TELEGRAM_HELP = [
   "🤖 Avrrio Trade AI — commands",
   "/scan (or /scan now) — run a scan now; alerts if a setup qualifies, else explains why",
+  "/rank — numbered ranked list of every symbol in the universe, best to worst",
   "/why — why nothing qualified in the latest scan",
   '/why <SYMBOL> — full breakdown for one symbol (e.g. "/why MNQ"), even if it wasn\'t a near-miss',
   "/status — mode, account, P&L, positions, kill switch, scheduler, AI",
