@@ -24,6 +24,7 @@ import {
   type TradeGradeResult,
 } from "./ai/tradeGrade.js";
 import { selectOrderType } from "./ai/orderSelection.js";
+import { assessPosition, managementText } from "./ai/tradeManagement.js";
 import { TradeMemory, type MemoryAssessment } from "./memory/tradeMemory.js";
 import { NewsReader } from "./news/newsReader.js";
 import { NotificationManager } from "./notifications/notifier.js";
@@ -46,10 +47,7 @@ import { TradeJournal } from "./journal/tradeJournal.js";
 import { TopstepClient } from "./topstep/client.js";
 import { sendSms, samePhone, smsMissing } from "./sms/smsClient.js";
 import { parseSmsCommand, type SmsCommand } from "./sms/inbound.js";
-import {
-  formatOpportunitySms,
-  formatSignalSms,
-} from "./sms/messages.js";
+import { formatOpportunitySms, formatSignalSms } from "./sms/messages.js";
 import type {
   AccountSummary,
   AuthTestResult,
@@ -150,8 +148,14 @@ export class AvrrioEngine {
     this.consensus = new ConsensusEngine(config);
     this.news = new NewsReader(config);
     this.scanner = new Scanner(this.market, this.news);
-    this.killSwitch = new KillSwitch(config, this.audit, dataPath("kill-switch.json"));
-    this.recommendations = new RecommendationStore(dataPath("recommendations.json"));
+    this.killSwitch = new KillSwitch(
+      config,
+      this.audit,
+      dataPath("kill-switch.json"),
+    );
+    this.recommendations = new RecommendationStore(
+      dataPath("recommendations.json"),
+    );
     this.executor = new OrderExecutor(
       this.settings,
       this.client,
@@ -161,7 +165,9 @@ export class AvrrioEngine {
     );
     // SMS and Telegram have dedicated, fully-formatted alert paths, so only email
     // is registered here (avoids duplicate notifications).
-    this.notifications = new NotificationManager(config, [new EmailNotifier(config)]);
+    this.notifications = new NotificationManager(config, [
+      new EmailNotifier(config),
+    ]);
     this.telegram = new TelegramService(config);
     this.auth = new Auth(config);
     this.scheduler = new Scheduler(this, config, this.settings);
@@ -330,7 +336,10 @@ export class AvrrioEngine {
         components,
         rewardRiskRatio: assessment.rewardRiskRatio,
         riskApproved: assessment.approved,
-        consensus: { agreement: consensus.agreement, available: consensus.available },
+        consensus: {
+          agreement: consensus.agreement,
+          available: consensus.available,
+        },
       },
       this.config.ai.qualityThreshold,
     );
@@ -434,7 +443,10 @@ export class AvrrioEngine {
    */
   private async dispatchAlert(rec: Recommendation): Promise<void> {
     if (!this.telegram.enabled) {
-      this.stage("TELEGRAM_SEND_FAILED", { ref: rec.ref, reason: "telegram not configured" });
+      this.stage("TELEGRAM_SEND_FAILED", {
+        ref: rec.ref,
+        reason: "telegram not configured",
+      });
       await this.audit.log("telegram.alert_skipped", "system", {
         ref: rec.ref,
         info: "Telegram not configured; SMS fallback disabled.",
@@ -471,7 +483,11 @@ export class AvrrioEngine {
    * trade alerts are still reserved for fully-qualified setups.
    */
   async sendWatchAlert(nm: NearMiss): Promise<void> {
-    this.stage("WATCH_ALERT", { symbol: nm.symbol, side: nm.side, score: nm.score });
+    this.stage("WATCH_ALERT", {
+      symbol: nm.symbol,
+      side: nm.side,
+      score: nm.score,
+    });
     if (!this.telegram.enabled) return;
     const text = [
       `👀 WATCH — ${nm.symbol} ${(nm.side ?? "").toUpperCase()}`,
@@ -513,7 +529,10 @@ export class AvrrioEngine {
   async telegramTest() {
     const r = await this.telegram.sendTest();
     if (r.ok) await this.settings.markValidation("telegramTestPassed");
-    await this.audit.log("telegram.test_sent", "operator", { ok: r.ok, info: r.info });
+    await this.audit.log("telegram.test_sent", "operator", {
+      ok: r.ok,
+      info: r.info,
+    });
     return r;
   }
   telegramDebug() {
@@ -626,7 +645,8 @@ export class AvrrioEngine {
         break;
       case "/stop":
         await this.engageKill("Telegram /stop", "telegram");
-        reply = "🛑 Emergency Stop ENGAGED. All trading is blocked. Reply /resume confirm to clear.";
+        reply =
+          "🛑 Emergency Stop ENGAGED. All trading is blocked. Reply /resume confirm to clear.";
         break;
       case "/resume":
         reply = await this.cmdResume(arg);
@@ -649,9 +669,13 @@ export class AvrrioEngine {
     const scan = this.scheduler.lastScan();
     const lines = ["📡 LAST SIGNAL"];
     if (last) {
-      const rr = Math.abs(last.entry - last.stopLoss) > 0
-        ? (Math.abs(last.target - last.entry) / Math.abs(last.entry - last.stopLoss)).toFixed(1)
-        : "n/a";
+      const rr =
+        Math.abs(last.entry - last.stopLoss) > 0
+          ? (
+              Math.abs(last.target - last.entry) /
+              Math.abs(last.entry - last.stopLoss)
+            ).toFixed(1)
+          : "n/a";
       lines.push(
         `${last.ref}: ${last.symbol} ${last.side.toUpperCase()} ×${last.size} — ${last.status}`,
         `Entry ${last.entry} · Stop ${last.stopLoss} · Target ${last.target} · R:R ${rr}`,
@@ -665,7 +689,8 @@ export class AvrrioEngine {
         "",
         `Last scan: ${scan.scanned} scanned, ${scan.qualifying} qualifying, ${scan.alerted} alerted.`,
       );
-      if (scan.reasons.length) lines.push("No-trade reasons: " + scan.reasons.join("; "));
+      if (scan.reasons.length)
+        lines.push("No-trade reasons: " + scan.reasons.join("; "));
     }
     return lines.join("\n");
   }
@@ -679,7 +704,8 @@ export class AvrrioEngine {
       return 'Usage: /discuss <T-ref> <question> — e.g. "/discuss T-1042 why not buy now?" (omit the ref to ask about the latest signal).';
     }
     const { ref, question } = this.splitRefAndText(arg);
-    if (!question) return "Add a question, e.g. /discuss T-1042 where should I enter?";
+    if (!question)
+      return "Add a question, e.g. /discuss T-1042 where should I enter?";
     const r = await this.discussTrade(ref, question);
     return `💬 ${r.ref} — ${question}\n\n${r.answer}`;
   }
@@ -693,10 +719,13 @@ export class AvrrioEngine {
       return 'Usage: /whatif <T-ref> <scenario> — e.g. "/whatif T-1042 move my stop to 20010" or "/whatif T-1042 only one contract".';
     }
     const { ref, question: scenario } = this.splitRefAndText(arg);
-    if (!scenario) return "Add a scenario, e.g. /whatif T-1042 move my stop to 20010.";
+    if (!scenario)
+      return "Add a scenario, e.g. /whatif T-1042 move my stop to 20010.";
     try {
       const r = await this.whatIf(ref, scenario);
-      return r.interpretation ? `${r.summary}\n\n🧠 ${r.interpretation}` : r.summary;
+      return r.interpretation
+        ? `${r.summary}\n\n🧠 ${r.interpretation}`
+        : r.summary;
     } catch (err) {
       return err instanceof Error ? err.message : "Could not run that what-if.";
     }
@@ -711,11 +740,14 @@ export class AvrrioEngine {
     if (!target) {
       const recs = this.recommendations.list();
       const latest = recs[recs.length - 1];
-      if (!latest) return "Usage: /debate <T-ref or symbol> — e.g. /debate T-1042 or /debate NQ.";
+      if (!latest)
+        return "Usage: /debate <T-ref or symbol> — e.g. /debate T-1042 or /debate NQ.";
       target = latest.ref;
     }
     const r = await this.debate(target);
-    return r.interpretation ? `${r.summary}\n\n🧠 ${r.interpretation}` : r.summary;
+    return r.interpretation
+      ? `${r.summary}\n\n🧠 ${r.interpretation}`
+      : r.summary;
   }
 
   /**
@@ -738,14 +770,19 @@ export class AvrrioEngine {
     if (!ref) {
       const recs = this.recommendations.list();
       const latest = recs[recs.length - 1];
-      if (!latest) return "Usage: /coach <T-ref> — reviews a trade against your discipline rules.";
+      if (!latest)
+        return "Usage: /coach <T-ref> — reviews a trade against your discipline rules.";
       ref = latest.ref;
     }
     try {
       const r = await this.coachTrade(ref);
-      return r.interpretation ? `${r.summary}\n\n🧠 ${r.interpretation}` : r.summary;
+      return r.interpretation
+        ? `${r.summary}\n\n🧠 ${r.interpretation}`
+        : r.summary;
     } catch (err) {
-      return err instanceof Error ? err.message : "Could not review that trade.";
+      return err instanceof Error
+        ? err.message
+        : "Could not review that trade.";
     }
   }
 
@@ -758,7 +795,10 @@ export class AvrrioEngine {
     const parts = arg.trim().split(/\s+/);
     const first = parts[0] ?? "";
     if (/^t-?\d+$/i.test(first)) {
-      return { ref: first.toUpperCase().replace(/^T(?=\d)/, "T-"), question: parts.slice(1).join(" ").trim() };
+      return {
+        ref: first.toUpperCase().replace(/^T(?=\d)/, "T-"),
+        question: parts.slice(1).join(" ").trim(),
+      };
     }
     const recs = this.recommendations.list();
     const latest = recs[recs.length - 1];
@@ -783,7 +823,9 @@ export class AvrrioEngine {
     } catch {
       /* account optional */
     }
-    lines.push(`Emergency Stop: ${this.killSwitch.isEngaged() ? "ENGAGED 🛑" : "clear"}`);
+    lines.push(
+      `Emergency Stop: ${this.killSwitch.isEngaged() ? "ENGAGED 🛑" : "clear"}`,
+    );
     return lines.join("\n");
   }
 
@@ -846,7 +888,9 @@ export class AvrrioEngine {
             : "⚠️ Could not clear the Emergency Stop (it may be forced by the KILL_SWITCH env var).",
         );
       } else {
-        lines.push("⚠️ Emergency Stop is still ENGAGED — reply '/resume confirm' to clear it.");
+        lines.push(
+          "⚠️ Emergency Stop is still ENGAGED — reply '/resume confirm' to clear it.",
+        );
       }
     }
     return lines.join("\n");
@@ -869,12 +913,22 @@ export class AvrrioEngine {
    * trade's full secret-free context to Claude. ADVISORY ONLY — it can never
    * place, approve, or modify the trade. Works offline (Claude returns a stub).
    */
-  async discussTrade(ref: string, question: string): Promise<{ ref: string; question: string; answer: string }> {
-    const rec = this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
+  async discussTrade(
+    ref: string,
+    question: string,
+  ): Promise<{ ref: string; question: string; answer: string }> {
+    const rec =
+      this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
     if (!rec) {
-      return { ref, question, answer: `No recommendation found for "${ref}". Use /last_signal to see recent trades.` };
+      return {
+        ref,
+        question,
+        answer: `No recommendation found for "${ref}". Use /last_signal to see recent trades.`,
+      };
     }
-    const context = [await this.askContext(), "", buildTradeContext(rec)].join("\n");
+    const context = [await this.askContext(), "", buildTradeContext(rec)].join(
+      "\n",
+    );
     const answer = await this.claude.ask(question, context);
     await this.audit.log("trade.discuss", "operator", {
       ref: rec.ref,
@@ -890,8 +944,12 @@ export class AvrrioEngine {
    * The numbers are deterministic (no AI key needed); when Claude is configured
    * it adds a short interpretation. Never alters the live trade.
    */
-  async whatIf(ref: string, scenario: string): Promise<WhatIfResult & { interpretation?: string }> {
-    const rec = this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
+  async whatIf(
+    ref: string,
+    scenario: string,
+  ): Promise<WhatIfResult & { interpretation?: string }> {
+    const rec =
+      this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
     if (!rec) {
       throw new Error(`No recommendation found for "${ref}".`);
     }
@@ -907,7 +965,12 @@ export class AvrrioEngine {
     if (this.claude.enabled && result.changes.length > 0) {
       const interpretation = await this.claude.ask(
         `Scenario: ${scenario}\nInterpret this what-if for the operator in 1-2 sentences. Do not invent numbers.`,
-        [buildTradeContext(rec), "", "Deterministic recompute:", result.summary].join("\n"),
+        [
+          buildTradeContext(rec),
+          "",
+          "Deterministic recompute:",
+          result.summary,
+        ].join("\n"),
       );
       return { ...result, interpretation };
     }
@@ -920,7 +983,9 @@ export class AvrrioEngine {
    * with no AI key); Claude, when enabled, adds a short closing thought without
    * changing the verdict. ADVISORY ONLY — never places or approves a trade.
    */
-  async debate(refOrSymbol: string): Promise<DebateResult & { interpretation?: string }> {
+  async debate(
+    refOrSymbol: string,
+  ): Promise<DebateResult & { interpretation?: string }> {
     const thresholds = {
       minScore: this.config.notifications.opportunityAlertScore,
       minRR: this.config.scheduler.minRewardRisk,
@@ -928,7 +993,8 @@ export class AvrrioEngine {
     const rec = this.recommendations.findByRef(refOrSymbol);
     const symbol = (rec?.symbol ?? refOrSymbol).toUpperCase();
     let snapshot: MarketSnapshot | null = null;
-    let components: ReturnType<typeof scoreSnapshot>["components"] | null = null;
+    let components: ReturnType<typeof scoreSnapshot>["components"] | null =
+      null;
     let score: number | null = rec?.avrrioScore ?? null;
     let newsState: { blocked: boolean; reason: string } | null = rec
       ? rec.news
@@ -939,7 +1005,8 @@ export class AvrrioEngine {
       const scored = scoreSnapshot(snapshot, news.blocked);
       components = scored.components;
       if (score == null) score = scored.score;
-      if (!newsState) newsState = { blocked: news.blocked, reason: news.reason };
+      if (!newsState)
+        newsState = { blocked: news.blocked, reason: news.reason };
     } catch {
       /* snapshot/news optional — debate degrades to whatever the rec carries */
     }
@@ -985,8 +1052,11 @@ export class AvrrioEngine {
    * discipline rules. Deterministic critique (works with no AI key); Claude, when
    * enabled, adds a short coaching note. ADVISORY reflection only.
    */
-  async coachTrade(ref: string): Promise<CoachReview & { interpretation?: string }> {
-    const rec = this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
+  async coachTrade(
+    ref: string,
+  ): Promise<CoachReview & { interpretation?: string }> {
+    const rec =
+      this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
     if (!rec) throw new Error(`No recommendation found for "${ref}".`);
     const review = await this.buildCoachReview(rec);
     await this.audit.log("trade.coach", "operator", {
@@ -998,7 +1068,9 @@ export class AvrrioEngine {
     if (this.claude.enabled) {
       const interpretation = await this.claude.ask(
         "Give one short, encouraging coaching takeaway for next time. Do not invent numbers or add new critiques.",
-        [buildTradeContext(rec), "", "Coach review:", review.summary].join("\n"),
+        [buildTradeContext(rec), "", "Coach review:", review.summary].join(
+          "\n",
+        ),
       );
       return { ...review, interpretation };
     }
@@ -1020,8 +1092,14 @@ export class AvrrioEngine {
     let outcome: { realizedPnl: number | null; paper: boolean } | null = null;
     const closed = this.journal
       .list()
-      .find((e) => e.symbol === rec.symbol && e.status === "closed" && e.realizedPnl != null);
-    if (closed) outcome = { realizedPnl: closed.realizedPnl ?? null, paper: true };
+      .find(
+        (e) =>
+          e.symbol === rec.symbol &&
+          e.status === "closed" &&
+          e.realizedPnl != null,
+      );
+    if (closed)
+      outcome = { realizedPnl: closed.realizedPnl ?? null, paper: true };
 
     return coachReview({
       ref: rec.ref,
@@ -1064,6 +1142,65 @@ export class AvrrioEngine {
   }
 
   /**
+   * Live Trade Management: re-analyzes every open (executed, not yet closed)
+   * position and alerts the operator only when the recommended action changes
+   * (Hold/Tighten Stop/Take Partial/Exit) — never re-sends the same action on
+   * every cycle. Purely advisory: it never modifies or closes an order itself.
+   */
+  async reviewOpenPositions(): Promise<void> {
+    for (const rec of this.recommendations.openPositions()) {
+      try {
+        await this.reviewOpenPosition(rec);
+      } catch (err) {
+        console.error(
+          `reviewOpenPositions failed for ${rec.ref} (non-fatal):`,
+          err,
+        );
+      }
+    }
+  }
+
+  private async reviewOpenPosition(rec: Recommendation): Promise<void> {
+    const snapshot = await this.snapshot(rec.symbol);
+    const signal = assessPosition({
+      side: rec.side,
+      entry: rec.entry,
+      stopLoss: rec.stopLoss,
+      target: rec.target,
+      last: snapshot.quote.last,
+      trend: snapshot.structure.trend,
+    });
+
+    if (signal.action === rec.lastManagementAction) return; // no change, no noise
+
+    rec.lastManagementAction = signal.action;
+    if (signal.action === "exit")
+      rec.managementClosedAt = new Date().toISOString();
+    await this.recommendations.update(rec);
+
+    await this.audit.log("trade.management", "system", {
+      ref: rec.ref,
+      symbol: rec.symbol,
+      action: signal.action,
+      rMultiple: signal.rMultiple,
+    });
+    await this.broadcast(
+      managementText(rec.ref, rec.symbol, signal),
+      "trade.management",
+    );
+  }
+
+  /** Operator marks an open position as closed — stops further management alerts. */
+  async closePosition(idOrRef: string, actor: string): Promise<Recommendation> {
+    const rec = this.recommendations.get(idOrRef);
+    if (!rec) throw new Error(`No recommendation found for "${idOrRef}".`);
+    rec.managementClosedAt = new Date().toISOString();
+    await this.recommendations.update(rec);
+    await this.audit.log("trade.management.closed", actor, { ref: rec.ref });
+    return rec;
+  }
+
+  /**
    * Explains the latest scan: which filters each top symbol failed and the
    * global gates. Read-only. Covers score, reward/risk, tradability, direction,
    * news, emergency stop, daily-loss budget, and duplicate positions.
@@ -1091,7 +1228,10 @@ export class AvrrioEngine {
     }
 
     if (last && last.alerted > 0) {
-      lines.push("", `✅ ${last.alerted} A+ setup(s) alerted: ${last.refs.join(", ")}.`);
+      lines.push(
+        "",
+        `✅ ${last.alerted} A+ setup(s) alerted: ${last.refs.join(", ")}.`,
+      );
       return lines.join("\n");
     }
 
@@ -1225,11 +1365,16 @@ export class AvrrioEngine {
       });
       // It may already satisfy its conditions — try once immediately.
       const result = await this.tryTrigger(rec);
-      return { mode, armed: result === undefined, ...(result ? { result } : {}) };
+      return {
+        mode,
+        armed: result === undefined,
+        ...(result ? { result } : {}),
+      };
     }
 
     const result = await this.executor.execute(rec, actor);
-    if (result.paper) await this.settings.markValidation("paperApprovalTestPassed");
+    if (result.paper)
+      await this.settings.markValidation("paperApprovalTestPassed");
     if (result.accepted) void this.autoCoach(rec); // post-trade review
     return { mode, armed: false, result };
   }
@@ -1340,7 +1485,10 @@ export class AvrrioEngine {
         this.config,
         "🛑 Emergency Stop activated. No trades can execute.",
       );
-      await this.audit.log("sms.emergency_sent", actor, { ok: r.ok, info: r.info });
+      await this.audit.log("sms.emergency_sent", actor, {
+        ok: r.ok,
+        info: r.info,
+      });
     }
   }
 
@@ -1375,7 +1523,9 @@ export class AvrrioEngine {
     if (enabled) {
       const checklist = await this.liveTradingChecklist(true);
       if (!checklist.ready) {
-        await this.audit.log("settings.live_trading_blocked", actor, { blockers: checklist.blockers });
+        await this.audit.log("settings.live_trading_blocked", actor, {
+          blockers: checklist.blockers,
+        });
         throw new Error(
           `Live trading is locked until all checks pass: ${checklist.blockers.join("; ")}`,
         );
@@ -1403,24 +1553,53 @@ export class AvrrioEngine {
     }
   }
 
-  async liveTradingChecklist(refreshAuth = false): Promise<LiveTradingChecklist> {
+  async liveTradingChecklist(
+    refreshAuth = false,
+  ): Promise<LiveTradingChecklist> {
     if (refreshAuth) {
       this.lastAuthTest = await this.client.authTest();
     }
     const auth = this.lastAuthTest;
     const status = this.client.status();
     const v = this.settings.getValidations();
-    const maxDailyLossConfigured = this.config.safety.dailyMaxLoss > 0 || status.maxDailyLoss > 0;
+    const maxDailyLossConfigured =
+      this.config.safety.dailyMaxLoss > 0 || status.maxDailyLoss > 0;
     const maxPositionSizeConfigured = this.config.safety.maxPositionSize > 0;
-    const checks: Array<[keyof Omit<LiveTradingChecklist, "ready" | "blockers">, boolean, string]> = [
+    const checks: Array<
+      [keyof Omit<LiveTradingChecklist, "ready" | "blockers">, boolean, string]
+    > = [
       ["projectxAuth", !!auth?.ok, "ProjectX auth must pass"],
-      ["tokenReceived", !!auth?.tokenReceived, "Auth Test must show token received yes"],
-      ["accountFound", !!auth?.accountFound, "Auth Test must show account found yes"],
+      [
+        "tokenReceived",
+        !!auth?.tokenReceived,
+        "Auth Test must show token received yes",
+      ],
+      [
+        "accountFound",
+        !!auth?.accountFound,
+        "Auth Test must show account found yes",
+      ],
       ["telegramTestPassed", v.telegramTestPassed, "Telegram test must pass"],
-      ["emergencyStopTested", v.emergencyStopTested, "Emergency Stop must be tested"],
-      ["maxDailyLossConfigured", maxDailyLossConfigured, "Max daily loss must be configured"],
-      ["maxPositionSizeConfigured", maxPositionSizeConfigured, "Max position size must be configured"],
-      ["paperApprovalTestPassed", v.paperApprovalTestPassed, "At least one paper/simulated approval test must succeed"],
+      [
+        "emergencyStopTested",
+        v.emergencyStopTested,
+        "Emergency Stop must be tested",
+      ],
+      [
+        "maxDailyLossConfigured",
+        maxDailyLossConfigured,
+        "Max daily loss must be configured",
+      ],
+      [
+        "maxPositionSizeConfigured",
+        maxPositionSizeConfigured,
+        "Max position size must be configured",
+      ],
+      [
+        "paperApprovalTestPassed",
+        v.paperApprovalTestPassed,
+        "At least one paper/simulated approval test must succeed",
+      ],
     ];
     const blockers = checks.filter(([, ok]) => !ok).map(([, , label]) => label);
     return {
@@ -1504,7 +1683,9 @@ export class AvrrioEngine {
       "",
       `Score: ${r.passed}/${r.total} (${r.scorePct}%)`,
       `Live trading: ${r.liveTradingEnabled ? "ENABLED" : "disabled"} · Overall: ${r.ready ? "READY" : "NOT READY"}`,
-      r.blockers.length ? `Blockers: ${r.blockers.join("; ")}` : "No blockers remaining.",
+      r.blockers.length
+        ? `Blockers: ${r.blockers.join("; ")}`
+        : "No blockers remaining.",
     ].join("\n");
   }
 
@@ -1539,7 +1720,10 @@ export class AvrrioEngine {
     actor: string,
   ): Promise<void> {
     await this.scheduler.configure(enabled, intervalMinutes);
-    await this.audit.log("settings.scheduler", actor, { enabled, intervalMinutes });
+    await this.audit.log("settings.scheduler", actor, {
+      enabled,
+      intervalMinutes,
+    });
   }
 
   /**
@@ -1563,8 +1747,14 @@ export class AvrrioEngine {
 
   // --- SMS: outbound test + inbound command handling --------------------
   async sendTestSms() {
-    const r = await sendSms(this.config, "Avrrio Trade AI test alert successful.");
-    await this.audit.log("sms.test_sent", "operator", { ok: r.ok, info: r.info });
+    const r = await sendSms(
+      this.config,
+      "Avrrio Trade AI test alert successful.",
+    );
+    await this.audit.log("sms.test_sent", "operator", {
+      ok: r.ok,
+      info: r.info,
+    });
     return r;
   }
 
@@ -1582,7 +1772,10 @@ export class AvrrioEngine {
   async broadcast(text: string, type = "report"): Promise<void> {
     if (this.telegram.enabled) {
       const r = await this.telegram.sendText(text);
-      await this.audit.log(`${type}.telegram`, "system", { ok: r.ok, info: r.info });
+      await this.audit.log(`${type}.telegram`, "system", {
+        ok: r.ok,
+        info: r.info,
+      });
     }
     if (this.config.notifications.sms.enabled) {
       const r = await sendSms(this.config, text);
@@ -1621,17 +1814,29 @@ export class AvrrioEngine {
       /* report still useful without the account snapshot */
     }
     const top = (await this.scan({ limit: 12 }))
-      .filter((r) => r.tradable && (r.direction === "bullish" || r.direction === "bearish"))
+      .filter(
+        (r) =>
+          r.tradable &&
+          (r.direction === "bullish" || r.direction === "bearish"),
+      )
       .slice(0, 3);
-    const lines = [header, `Mode: ${this.getTradingMode()} · Trading: ${this.isLiveTradingEnabled() ? "LIVE" : "paper"}`];
+    const lines = [
+      header,
+      `Mode: ${this.getTradingMode()} · Trading: ${this.isLiveTradingEnabled() ? "LIVE" : "paper"}`,
+    ];
     if (account) {
       lines.push(
         `Account: ${account.name} · BP $${account.balance.toLocaleString()} · Day P&L ${account.dayPnl >= 0 ? "+" : ""}$${account.dayPnl.toLocaleString()}`,
       );
     }
-    lines.push(`Kill switch: ${this.killSwitch.isEngaged() ? "ENGAGED" : "clear"}`);
+    lines.push(
+      `Kill switch: ${this.killSwitch.isEngaged() ? "ENGAGED" : "clear"}`,
+    );
     if (slot === "midday") lines.push(`Scans today: ${scans}`);
-    lines.push("", top.length ? "Top opportunities:" : "No tradable setups right now.");
+    lines.push(
+      "",
+      top.length ? "Top opportunities:" : "No tradable setups right now.",
+    );
     for (const o of top) {
       lines.push(
         `• ${o.symbol} ${o.direction === "bullish" ? "LONG" : "SHORT"} — score ${o.score}/100`,
@@ -1711,7 +1916,10 @@ export class AvrrioEngine {
    * returns the confirmation text to send back.
    */
   async handleInboundSms(fromNumber: string, body: string): Promise<string> {
-    const authorized = samePhone(fromNumber, this.config.notifications.sms.toNumber);
+    const authorized = samePhone(
+      fromNumber,
+      this.config.notifications.sms.toNumber,
+    );
     if (!authorized) {
       await this.audit.log("sms.unauthorized", fromNumber, { body });
       return "⚠️ Unauthorized number. Command rejected.";
@@ -1742,8 +1950,13 @@ export class AvrrioEngine {
   private telegramDetails(ref: string): string {
     const rec = this.recommendations.findByRef(ref);
     if (!rec) return `⚠️ Trade ${ref} not found.`;
-    const rr = rec.riskAmount > 0 ? Math.abs(rec.target - rec.entry) / Math.abs(rec.entry - rec.stopLoss) : 0;
-    const liveMode = this.settings.isLiveTradingEnabled() ? "LIVE" : "paper/simulated";
+    const rr =
+      rec.riskAmount > 0
+        ? Math.abs(rec.target - rec.entry) / Math.abs(rec.entry - rec.stopLoss)
+        : 0;
+    const liveMode = this.settings.isLiveTradingEnabled()
+      ? "LIVE"
+      : "paper/simulated";
     return [
       `📋 Trade ${rec.ref} details`,
       `${rec.symbol} ${rec.side.toUpperCase()} ×${rec.size}`,
@@ -1829,7 +2042,10 @@ export class AvrrioEngine {
     // Block if the market has moved too far from entry.
     const quote = await this.client.getQuote(rec.symbol);
     const tol = this.config.queue.entryTriggerTolerancePct;
-    if (rec.entry > 0 && Math.abs(quote.last - rec.entry) / rec.entry > tol * 50) {
+    if (
+      rec.entry > 0 &&
+      Math.abs(quote.last - rec.entry) / rec.entry > tol * 50
+    ) {
       return `⚠️ Trade ${ref} blocked: price moved too far from entry ${rec.entry} (now ${quote.last}).`;
     }
     // TopstepX readiness gate.
@@ -1876,11 +2092,16 @@ export class AvrrioEngine {
   }
 
   private smsPendingText(): string {
-    const pending = this.recommendations.pending().concat(this.recommendations.armed());
+    const pending = this.recommendations
+      .pending()
+      .concat(this.recommendations.armed());
     if (pending.length === 0) return "No pending trades.";
     return pending
       .slice(0, 5)
-      .map((r) => `${r.ref}: ${r.symbol} ${r.side.toUpperCase()} @ ${r.entry} (${r.status})`)
+      .map(
+        (r) =>
+          `${r.ref}: ${r.symbol} ${r.side.toUpperCase()} @ ${r.entry} (${r.status})`,
+      )
       .join("\n");
   }
 
@@ -1922,7 +2143,9 @@ export class AvrrioEngine {
       setup: input.setup ?? rec?.setupName ?? null,
       score: input.score ?? rec?.avrrioScore ?? null,
       rewardRisk: input.rewardRisk ?? rec?.rewardRiskRatio ?? null,
-      entryHour: entryIso ? hourInZone(entryIso, this.config.accountTimezone) : null,
+      entryHour: entryIso
+        ? hourInZone(entryIso, this.config.accountTimezone)
+        : null,
       pnl: input.pnl,
     });
     await this.audit.log("memory.record", "system", {
@@ -1934,7 +2157,10 @@ export class AvrrioEngine {
   }
 
   /** Most recent executed/decided recommendation for a symbol+side, if any. */
-  private latestExecutedFor(symbol: string, side: Side): Recommendation | undefined {
+  private latestExecutedFor(
+    symbol: string,
+    side: Side,
+  ): Recommendation | undefined {
     const sym = symbol.toUpperCase();
     return [...this.recommendations.list()]
       .reverse()
@@ -1946,7 +2172,8 @@ export class AvrrioEngine {
    * a pattern you've struggled with" check. Advisory only.
    */
   assessMemory(ref: string): MemoryAssessment & { ref?: string } {
-    const rec = this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
+    const rec =
+      this.recommendations.findByRef(ref) ?? this.recommendations.get(ref);
     if (!rec) {
       return this.memory.assess({ setup: null, side: null });
     }
@@ -1973,7 +2200,9 @@ export class AvrrioEngine {
     if (setups.length) {
       lines.push("By setup:");
       for (const s of setups.slice(0, 6)) {
-        lines.push(`• ${s.key}: ${s.winRate != null ? Math.round(s.winRate * 100) + "%" : "n/a"} (n=${s.wins + s.losses})`);
+        lines.push(
+          `• ${s.key}: ${s.winRate != null ? Math.round(s.winRate * 100) + "%" : "n/a"} (n=${s.wins + s.losses})`,
+        );
       }
     }
     const insights = this.memory.insights();

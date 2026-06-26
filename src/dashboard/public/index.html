@@ -6,52 +6,233 @@
     <title>Avrrio Trade AI — Dashboard</title>
     <style>
       :root {
-        --bg: #0f1117; --card: #1a1d27; --line: #2a2e3c; --text: #e6e8ee;
-        --muted: #8b90a0; --ok: #3fb950; --warn: #d29922; --block: #f85149; --blue: #2563eb;
+        --bg: #0f1117;
+        --card: #1a1d27;
+        --line: #2a2e3c;
+        --text: #e6e8ee;
+        --muted: #8b90a0;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --block: #f85149;
+        --blue: #2563eb;
       }
-      * { box-sizing: border-box; }
-      body { margin: 0; font: 14px/1.5 -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); }
-      header { padding: 14px 24px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
-      h1 { font-size: 17px; margin: 0; }
-      .tag { color: var(--muted); font-size: 12px; }
-      .spacer { flex: 1; }
-      main { padding: 24px; display: grid; gap: 16px; max-width: 1040px; }
-      .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
-      .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
-      .card h2 { font-size: 12px; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; letter-spacing: .04em; }
-      .big { font-size: 24px; font-weight: 600; }
-      .warnings li { color: var(--warn); }
-      label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-      input, select, button { background: #0f1117; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: inherit; width: 100%; }
-      button { cursor: pointer; font-weight: 600; }
-      .btn-primary { background: var(--blue); border-color: var(--blue); }
-      .btn-ok { background: var(--ok); border-color: var(--ok); color: #06210e; }
-      .btn-danger { background: var(--block); border-color: var(--block); }
-      .btn-ghost { background: transparent; }
-      .row { display: grid; gap: 8px; grid-template-columns: repeat(3, 1fr); }
-      .row6 { display: grid; gap: 8px; grid-template-columns: repeat(6, 1fr); }
-      table { width: 100%; border-collapse: collapse; font-size: 13px; }
-      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-      th { color: var(--muted); font-weight: 500; }
-      .v-warn { color: var(--warn); } .v-block { color: var(--block); }
-      .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; border: 1px solid var(--line); }
-      .pill.pending { color: var(--warn); border-color: var(--warn); }
-      .pill.armed { color: var(--blue); border-color: var(--blue); }
-      .pill.executed { color: var(--ok); border-color: var(--ok); }
-      .pill.blocked, .pill.rejected { color: var(--block); border-color: var(--block); }
-      .rec { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-      .rec .actions { display: flex; gap: 8px; }
-      .rec .actions button { width: auto; padding: 6px 14px; }
-      .chat { border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 4px; }
-      .chat-row { display: flex; gap: 6px; margin-top: 6px; }
-      .chat-row input { flex: 1; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
-      .chatlog { display: grid; gap: 6px; margin-top: 6px; }
-      .chatmsg { font-size: 13px; line-height: 1.4; padding: 6px 10px; border-radius: 6px; }
-      .chatmsg.you { background: rgba(127,127,127,0.10); }
-      .chatmsg.ai { background: rgba(80,160,255,0.10); }
-      .hidden { display: none; }
-      #login { max-width: 360px; margin: 80px auto; }
-      .kill { display: flex; align-items: center; gap: 10px; }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.5 -apple-system,
+          system-ui,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header {
+        padding: 14px 24px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      h1 {
+        font-size: 17px;
+        margin: 0;
+      }
+      .tag {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .spacer {
+        flex: 1;
+      }
+      main {
+        padding: 24px;
+        display: grid;
+        gap: 16px;
+        max-width: 1040px;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 16px;
+      }
+      .card h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 8px;
+        letter-spacing: 0.04em;
+      }
+      .big {
+        font-size: 24px;
+        font-weight: 600;
+      }
+      .warnings li {
+        color: var(--warn);
+      }
+      label {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 4px;
+      }
+      input,
+      select,
+      button {
+        background: #0f1117;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 8px;
+        font: inherit;
+        width: 100%;
+      }
+      button {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .btn-primary {
+        background: var(--blue);
+        border-color: var(--blue);
+      }
+      .btn-ok {
+        background: var(--ok);
+        border-color: var(--ok);
+        color: #06210e;
+      }
+      .btn-danger {
+        background: var(--block);
+        border-color: var(--block);
+      }
+      .btn-ghost {
+        background: transparent;
+      }
+      .row {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(3, 1fr);
+      }
+      .row6 {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(6, 1fr);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .v-warn {
+        color: var(--warn);
+      }
+      .v-block {
+        color: var(--block);
+      }
+      .pill {
+        display: inline-block;
+        padding: 1px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        border: 1px solid var(--line);
+      }
+      .pill.pending {
+        color: var(--warn);
+        border-color: var(--warn);
+      }
+      .pill.armed {
+        color: var(--blue);
+        border-color: var(--blue);
+      }
+      .pill.executed {
+        color: var(--ok);
+        border-color: var(--ok);
+      }
+      .pill.blocked,
+      .pill.rejected {
+        color: var(--block);
+        border-color: var(--block);
+      }
+      .rec {
+        display: grid;
+        gap: 6px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
+      }
+      .rec .actions {
+        display: flex;
+        gap: 8px;
+      }
+      .rec .actions button {
+        width: auto;
+        padding: 6px 14px;
+      }
+      .chat {
+        border-top: 1px dashed var(--line);
+        padding-top: 8px;
+        margin-top: 4px;
+      }
+      .chat-row {
+        display: flex;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .chat-row input {
+        flex: 1;
+        padding: 6px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+      }
+      .chatlog {
+        display: grid;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .chatmsg {
+        font-size: 13px;
+        line-height: 1.4;
+        padding: 6px 10px;
+        border-radius: 6px;
+      }
+      .chatmsg.you {
+        background: rgba(127, 127, 127, 0.1);
+      }
+      .chatmsg.ai {
+        background: rgba(80, 160, 255, 0.1);
+      }
+      .hidden {
+        display: none;
+      }
+      #login {
+        max-width: 360px;
+        margin: 80px auto;
+      }
+      .kill {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
     </style>
   </head>
   <body>
@@ -60,9 +241,13 @@
       <h2>Avrrio Trade AI — sign in</h2>
       <label>Dashboard password</label>
       <input id="password" type="password" placeholder="DASHBOARD_PASSWORD" />
-      <button class="btn-primary" id="loginBtn" style="margin-top:10px">Sign in</button>
-      <div id="loginErr" class="v-block" style="margin-top:8px"></div>
-      <div class="tag" style="margin-top:8px">If no password is configured, leave blank and sign in.</div>
+      <button class="btn-primary" id="loginBtn" style="margin-top: 10px">
+        Sign in
+      </button>
+      <div id="loginErr" class="v-block" style="margin-top: 8px"></div>
+      <div class="tag" style="margin-top: 8px">
+        If no password is configured, leave blank and sign in.
+      </div>
     </div>
 
     <!-- App -->
@@ -71,33 +256,87 @@
         <h1>Avrrio Trade AI</h1>
         <span class="tag" id="modeTag"></span>
         <span class="spacer"></span>
-        <select id="modeSelect" title="Trading mode" style="width:auto;padding:8px 10px;border-radius:8px">
+        <select
+          id="modeSelect"
+          title="Trading mode"
+          style="width: auto; padding: 8px 10px; border-radius: 8px"
+        >
           <option value="advisor">Advisor (alerts only)</option>
           <option value="telegram_approval">Telegram approval</option>
           <option value="full_auto">Full auto</option>
         </select>
-        <button class="btn-ghost" id="tradeModeBtn" style="width:auto;padding:8px 16px">Enable live trading only after all checks pass</button>
-        <button class="btn-danger" id="killBtn" style="width:auto;padding:8px 16px">🛑 Emergency Stop</button>
+        <button
+          class="btn-ghost"
+          id="tradeModeBtn"
+          style="width: auto; padding: 8px 16px"
+        >
+          Enable live trading only after all checks pass
+        </button>
+        <button
+          class="btn-danger"
+          id="killBtn"
+          style="width: auto; padding: 8px 16px"
+        >
+          🛑 Emergency Stop
+        </button>
       </header>
       <main>
         <ul class="warnings" id="warnings"></ul>
         <div class="grid" id="account"></div>
-        <div class="card" id="authPanel"><h2>Auth Test</h2><div class="tag">Click Auth test to diagnose ProjectX safely.</div></div>
+        <div class="card" id="authPanel">
+          <h2>Auth Test</h2>
+          <div class="tag">Click Auth test to diagnose ProjectX safely.</div>
+        </div>
 
         <div class="card">
           <h2>🔥 Top opportunities today (Avrrio Score)</h2>
-          <div class="kill" style="margin-bottom:10px">
-            <label style="margin:0">Scan:</label>
-            <label class="tag"><input type="checkbox" id="cFut" checked style="width:auto"> Futures</label>
-            <label class="tag"><input type="checkbox" id="cStk" checked style="width:auto"> Stocks</label>
-            <label class="tag"><input type="checkbox" id="cCry" checked style="width:auto"> Crypto</label>
-            <button class="btn-ghost" id="scanBtn" style="width:auto;padding:6px 14px">Scan now</button>
-            <button class="btn-primary" id="cycleBtn" style="width:auto;padding:6px 14px" title="Scan, qualify (score≥85 & R/R≥2), and create + SMS the top 1–3 setups">Run scan cycle (alert worthy)</button>
+          <div class="kill" style="margin-bottom: 10px">
+            <label style="margin: 0">Scan:</label>
+            <label class="tag"
+              ><input type="checkbox" id="cFut" checked style="width: auto" />
+              Futures</label
+            >
+            <label class="tag"
+              ><input type="checkbox" id="cStk" checked style="width: auto" />
+              Stocks</label
+            >
+            <label class="tag"
+              ><input type="checkbox" id="cCry" checked style="width: auto" />
+              Crypto</label
+            >
+            <button
+              class="btn-ghost"
+              id="scanBtn"
+              style="width: auto; padding: 6px 14px"
+            >
+              Scan now
+            </button>
+            <button
+              class="btn-primary"
+              id="cycleBtn"
+              style="width: auto; padding: 6px 14px"
+              title="Scan, qualify (score≥85 & R/R≥2), and create + SMS the top 1–3 setups"
+            >
+              Run scan cycle (alert worthy)
+            </button>
             <span class="tag" id="schedTag"></span>
           </div>
-          <div class="kill" style="margin-bottom:10px">
-            <button class="btn-ghost" id="schedToggle" style="width:auto;padding:6px 12px">Enable scheduler</button>
-            <label class="tag" style="margin:0">Interval (min) <input id="schedInterval" type="number" value="20" style="width:70px;display:inline-block;padding:4px"></label>
+          <div class="kill" style="margin-bottom: 10px">
+            <button
+              class="btn-ghost"
+              id="schedToggle"
+              style="width: auto; padding: 6px 12px"
+            >
+              Enable scheduler
+            </button>
+            <label class="tag" style="margin: 0"
+              >Interval (min)
+              <input
+                id="schedInterval"
+                type="number"
+                value="20"
+                style="width: 70px; display: inline-block; padding: 4px"
+            /></label>
             <span class="tag" id="schedTimes"></span>
           </div>
           <div id="scan"></div>
@@ -106,30 +345,78 @@
         <div class="card">
           <h2>Propose a trade (AI consensus + risk check, then YOU approve)</h2>
           <div class="row6">
-            <div><label>Setup</label><input id="setupName" placeholder="(optional)" /></div>
-            <div><label>Asset class</label>
-              <select id="assetClass"><option value="">all</option><option value="futures">futures</option><option value="stocks">stocks</option><option value="crypto">crypto</option></select>
+            <div>
+              <label>Setup</label
+              ><input id="setupName" placeholder="(optional)" />
             </div>
-            <div><label>Symbol</label><select id="symbolPicker"></select></div>
-            <div><label>Symbol (manual)</label><input id="symbol" value="NQ" /></div>
-            <div><label>Side</label><select id="side"><option>long</option><option>short</option></select></div>
-            <div><label>Size</label><input id="size" type="number" value="1" /></div>
-          </div>
-          <div class="row6" style="margin-top:8px">
-            <div><label>Entry</label><input id="entry" type="number" value="20000" /></div>
-            <div><label>Stop</label><input id="stop" type="number" value="19960" /></div>
-            <div><label>Target</label><input id="target" type="number" value="20080" /></div>
-            <div style="grid-column: span 3; display:flex; align-items:end; gap:8px">
-              <button class="btn-primary" id="proposeBtn" style="width:auto">Generate recommendation</button>
-              <span id="tradeNote" class="tag" style="align-self:center"></span>
+            <div>
+              <label>Asset class</label>
+              <select id="assetClass">
+                <option value="">all</option>
+                <option value="futures">futures</option>
+                <option value="stocks">stocks</option>
+                <option value="crypto">crypto</option>
+              </select>
+            </div>
+            <div>
+              <label>Symbol</label
+              ><select id="symbolPicker"></select>
+            </div>
+            <div>
+              <label>Symbol (manual)</label><input id="symbol" value="NQ" />
+            </div>
+            <div>
+              <label>Side</label
+              ><select id="side">
+                <option>long</option>
+                <option>short</option>
+              </select>
+            </div>
+            <div>
+              <label>Size</label><input id="size" type="number" value="1" />
             </div>
           </div>
-          <div id="proposeErr" class="v-block" style="margin-top:8px"></div>
+          <div class="row6" style="margin-top: 8px">
+            <div>
+              <label>Entry</label
+              ><input id="entry" type="number" value="20000" />
+            </div>
+            <div>
+              <label>Stop</label><input id="stop" type="number" value="19960" />
+            </div>
+            <div>
+              <label>Target</label
+              ><input id="target" type="number" value="20080" />
+            </div>
+            <div
+              style="
+                grid-column: span 3;
+                display: flex;
+                align-items: end;
+                gap: 8px;
+              "
+            >
+              <button class="btn-primary" id="proposeBtn" style="width: auto">
+                Generate recommendation
+              </button>
+              <span
+                id="tradeNote"
+                class="tag"
+                style="align-self: center"
+              ></span>
+            </div>
+          </div>
+          <div id="proposeErr" class="v-block" style="margin-top: 8px"></div>
         </div>
 
         <div class="card">
           <h2>Pending approvals</h2>
           <div id="recs"></div>
+        </div>
+
+        <div class="card">
+          <h2>Live positions (Trade Management)</h2>
+          <div id="positions"></div>
         </div>
 
         <div class="card">
@@ -139,7 +426,17 @@
 
         <div class="card">
           <h2>Audit log (latest)</h2>
-          <table id="audit"><thead><tr><th>Time</th><th>Type</th><th>Actor</th><th>Details</th></tr></thead><tbody></tbody></table>
+          <table id="audit">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Type</th>
+                <th>Actor</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
         </div>
       </main>
     </div>
@@ -147,11 +444,16 @@
     <script>
       const $ = (id) => document.getElementById(id);
       let TOKEN = null;
-      const authHeaders = () => (TOKEN ? { authorization: "Bearer " + TOKEN } : {});
+      const authHeaders = () =>
+        TOKEN ? { authorization: "Bearer " + TOKEN } : {};
       const api = (path, opts = {}) =>
         fetch(path, {
           ...opts,
-          headers: { "content-type": "application/json", ...authHeaders(), ...(opts.headers || {}) },
+          headers: {
+            "content-type": "application/json",
+            ...authHeaders(),
+            ...(opts.headers || {}),
+          },
         });
 
       // Safe JSON parse: never blows up on an HTML error page (502/500/timeout).
@@ -181,7 +483,10 @@
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ password: $("password").value }),
         });
-        if (!r.ok) { $("loginErr").textContent = "Invalid password."; return; }
+        if (!r.ok) {
+          $("loginErr").textContent = "Invalid password.";
+          return;
+        }
         TOKEN = (await r.json()).token;
         $("login").classList.add("hidden");
         $("app").classList.remove("hidden");
@@ -198,45 +503,95 @@
           showError("Could not reach the backend: " + e.message);
           return;
         }
-        $("warnings").innerHTML = (s.warnings || []).map((w) => `<li>${w}</li>`).join("");
-        if (s.accountError) showError("Account data unavailable: " + s.accountError);
+        $("warnings").innerHTML = (s.warnings || [])
+          .map((w) => `<li>${w}</li>`)
+          .join("");
+        if (s.accountError)
+          showError("Account data unavailable: " + s.accountError);
         const a = s.account;
         const t = s.topstepx || {};
-        const modeLabel = ({ advisor: "advisor", telegram_approval: "tg-approval", full_auto: "FULL-AUTO" })[s.tradingMode] || s.tradingMode || "manual";
+        const modeLabel =
+          {
+            advisor: "advisor",
+            telegram_approval: "tg-approval",
+            full_auto: "FULL-AUTO",
+          }[s.tradingMode] ||
+          s.tradingMode ||
+          "manual";
         $("modeTag").textContent =
           `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · mode: ${modeLabel} · AI: ${s.providers.join("+") || "none"} · alerts: ${s.notifications ? s.notifications.primaryChannel : "off"}`;
-        if (s.tradingMode && document.activeElement !== $("modeSelect")) $("modeSelect").value = s.tradingMode;
-        $("killBtn").textContent = s.killSwitch.engaged ? "✅ Clear Emergency Stop" : "🛑 Emergency Stop";
+        if (s.tradingMode && document.activeElement !== $("modeSelect"))
+          $("modeSelect").value = s.tradingMode;
+        $("killBtn").textContent = s.killSwitch.engaged
+          ? "✅ Clear Emergency Stop"
+          : "🛑 Emergency Stop";
         $("killBtn").dataset.engaged = s.killSwitch.engaged ? "1" : "";
-        $("tradeModeBtn").textContent = s.liveTrading ? "Trading: LIVE" : "Enable live trading only after all checks pass";
-        $("tradeModeBtn").className = s.liveTrading ? "btn-danger" : "btn-ghost";
+        $("tradeModeBtn").textContent = s.liveTrading
+          ? "Trading: LIVE"
+          : "Enable live trading only after all checks pass";
+        $("tradeModeBtn").className = s.liveTrading
+          ? "btn-danger"
+          : "btn-ghost";
         $("tradeModeBtn").dataset.live = s.liveTrading ? "1" : "";
         const claudeOn = (s.providers || []).includes("claude");
         if (s.scheduler) {
           const sc = s.scheduler;
-          $("schedTag").textContent = `scheduler ${sc.enabled ? "ON" : "off"} · scans today ${sc.scansToday}`;
-          $("schedToggle").textContent = sc.enabled ? "Disable scheduler" : "Enable scheduler";
+          $("schedTag").textContent =
+            `scheduler ${sc.enabled ? "ON" : "off"} · scans today ${sc.scansToday}`;
+          $("schedToggle").textContent = sc.enabled
+            ? "Disable scheduler"
+            : "Enable scheduler";
           $("schedToggle").className = sc.enabled ? "btn-danger" : "btn-ok";
           $("schedToggle").dataset.enabled = sc.enabled ? "1" : "";
-          if (document.activeElement !== $("schedInterval")) $("schedInterval").value = sc.intervalMinutes || 20;
-          $("schedTimes").textContent = `last scan ${sc.lastScanTime ? new Date(sc.lastScanTime).toLocaleTimeString() : "—"} · last alert ${sc.lastAlertTime ? new Date(sc.lastAlertTime).toLocaleTimeString() : "—"}`;
+          if (document.activeElement !== $("schedInterval"))
+            $("schedInterval").value = sc.intervalMinutes || 20;
+          $("schedTimes").textContent =
+            `last scan ${sc.lastScanTime ? new Date(sc.lastScanTime).toLocaleTimeString() : "—"} · last alert ${sc.lastAlertTime ? new Date(sc.lastAlertTime).toLocaleTimeString() : "—"}`;
         }
-        if (t.usingFallbackData) showError("TopstepX market data unavailable — scans are using SIMULATED data. Fix the connection (Auth test).");
-        if (s.notifications && s.notifications.smsEnabled && s.notifications.smsMissing && s.notifications.smsMissing.length) showError("SMS not configured — missing: " + s.notifications.smsMissing.join(", "));
-        if (s.notifications && !s.notifications.telegramEnabled && s.notifications.telegramMissing && s.notifications.telegramMissing.length) showError("Telegram not active — missing/unset: " + s.notifications.telegramMissing.join(", ") + " (use 'Telegram chat ID' for details).");
-        if (s.ai && s.ai.status === "offline") showError("AI assistant OFFLINE — set ANTHROPIC_API_KEY (and OPENAI_API_KEY for consensus). /ask and AI reasoning won't work until then.");
-        else if (s.ai && s.ai.lastError) showError("AI assistant last error: " + String(s.ai.lastError).slice(0, 80));
+        if (t.usingFallbackData)
+          showError(
+            "TopstepX market data unavailable — scans are using SIMULATED data. Fix the connection (Auth test).",
+          );
+        if (
+          s.notifications &&
+          s.notifications.smsEnabled &&
+          s.notifications.smsMissing &&
+          s.notifications.smsMissing.length
+        )
+          showError(
+            "SMS not configured — missing: " +
+              s.notifications.smsMissing.join(", "),
+          );
+        if (
+          s.notifications &&
+          !s.notifications.telegramEnabled &&
+          s.notifications.telegramMissing &&
+          s.notifications.telegramMissing.length
+        )
+          showError(
+            "Telegram not active — missing/unset: " +
+              s.notifications.telegramMissing.join(", ") +
+              " (use 'Telegram chat ID' for details).",
+          );
+        if (s.ai && s.ai.status === "offline")
+          showError(
+            "AI assistant OFFLINE — set ANTHROPIC_API_KEY (and OPENAI_API_KEY for consensus). /ask and AI reasoning won't work until then.",
+          );
+        else if (s.ai && s.ai.lastError)
+          showError(
+            "AI assistant last error: " + String(s.ai.lastError).slice(0, 80),
+          );
         $("account").innerHTML = `
           <div class="card"><h2>Account</h2><div>${a ? a.name : "—"}</div></div>
-          <div class="card"><h2>Balance</h2><div class="big">${a ? "$"+a.balance.toLocaleString() : "—"}</div></div>
-          <div class="card"><h2>Day P&amp;L</h2><div class="big" style="color:${a && a.dayPnl < 0 ? "var(--block)" : "var(--ok)"}">${a ? "$"+a.dayPnl.toLocaleString() : "—"}</div></div>
+          <div class="card"><h2>Balance</h2><div class="big">${a ? "$" + a.balance.toLocaleString() : "—"}</div></div>
+          <div class="card"><h2>Day P&amp;L</h2><div class="big" style="color:${a && a.dayPnl < 0 ? "var(--block)" : "var(--ok)"}">${a ? "$" + a.dayPnl.toLocaleString() : "—"}</div></div>
           <div class="card"><h2>Max daily loss</h2><div class="big">$${(s.safety.dailyMaxLoss || (a ? a.rules.maxDailyLoss : 0)).toLocaleString()}</div></div>
           <div class="card">
             <h2>TopstepX (${t.mode || "live"})</h2>
             <div class="big" style="color:${stateColor(t.connectionState)}">${stateLabel(t.connectionState)}</div>
             <div class="tag">ProjectX auth: <b style="color:${t.authenticated ? "var(--ok)" : "var(--block)"}">${t.authenticated ? "connected" : "failed"}</b> · TopstepX account: <b style="color:${t.connected ? "var(--ok)" : "var(--block)"}">${t.connected ? "connected" : "failed"}</b></div>
             <div class="tag">${t.message || ""}</div>
-            <div class="tag">Account ID ${t.accountId || "—"} · Buying power $${(t.availableBuyingPower||0).toLocaleString()} · Daily P&amp;L $${(t.dailyPnL||0).toLocaleString()} · Open positions ${t.openPositions||0}</div>
+            <div class="tag">Account ID ${t.accountId || "—"} · Buying power $${(t.availableBuyingPower || 0).toLocaleString()} · Daily P&amp;L $${(t.dailyPnL || 0).toLocaleString()} · Open positions ${t.openPositions || 0}</div>
             <div class="tag">Last sync: ${t.lastSyncTime ? new Date(t.lastSyncTime).toLocaleTimeString() : "never"}</div>
             <div class="tag">Claude analysis: <b style="color:${claudeOn ? "var(--ok)" : "var(--warn)"}">${claudeOn ? "enabled" : "disabled"}</b> · Alerts: <b>${s.notifications.primaryChannel}</b> · SMS: <b>${s.notifications.smsEnabled ? "enabled" : "disabled"}</b></div>
             ${s.ai ? `<div class="tag">AI assistant: <b style="color:${s.ai.status === "online" ? "var(--ok)" : "var(--block)"}">${s.ai.status}</b> · model ${s.ai.model} · last ok ${s.ai.lastSuccessAt ? new Date(s.ai.lastSuccessAt).toLocaleTimeString() : "—"}${s.ai.lastError ? ` · last error: ${String(s.ai.lastError).slice(0, 60)}` : ""}</div>` : ""}
@@ -254,6 +609,7 @@
             </div>
           </div>`;
         loadRecs().catch((e) => showError("recs: " + e.message));
+        loadPositions().catch((e) => showError("positions: " + e.message));
         loadAudit().catch(() => {});
         loadMemory().catch(() => {});
       }
@@ -262,36 +618,63 @@
         const m = await api("/api/memory").then(j);
         const o = m.overall || {};
         if (!o.trades) {
-          $("memory").innerHTML = '<div class="tag">No closed trades recorded yet. As trades close, Avrrio learns your win rates by setup, side, and time of day.</div>';
+          $("memory").innerHTML =
+            '<div class="tag">No closed trades recorded yet. As trades close, Avrrio learns your win rates by setup, side, and time of day.</div>';
           return;
         }
-        const wr = (s) => (s.winRate == null ? "n/a" : Math.round(s.winRate * 100) + "%");
-        const setups = (m.bySetup || []).filter((s) => s.trades > 0)
-          .map((s) => `<tr><td>${s.key}</td><td>${wr(s)}</td><td>${s.wins + s.losses}</td><td>${s.netPnl >= 0 ? "+" : ""}$${s.netPnl}</td></tr>`).join("");
-        const insights = (m.insights || []).map((i) => `<li>${i}</li>`).join("");
+        const wr = (s) =>
+          s.winRate == null ? "n/a" : Math.round(s.winRate * 100) + "%";
+        const setups = (m.bySetup || [])
+          .filter((s) => s.trades > 0)
+          .map(
+            (s) =>
+              `<tr><td>${s.key}</td><td>${wr(s)}</td><td>${s.wins + s.losses}</td><td>${s.netPnl >= 0 ? "+" : ""}$${s.netPnl}</td></tr>`,
+          )
+          .join("");
+        const insights = (m.insights || [])
+          .map((i) => `<li>${i}</li>`)
+          .join("");
         $("memory").innerHTML =
           `<div class="tag">Overall: <b>${o.trades}</b> trades · <b>${wr(o)}</b> win · net ${o.netPnl >= 0 ? "+" : ""}$${o.netPnl}</div>` +
-          (setups ? `<table style="margin-top:8px"><thead><tr><th>Setup</th><th>Win rate</th><th>n</th><th>Net</th></tr></thead><tbody>${setups}</tbody></table>` : "") +
+          (setups
+            ? `<table style="margin-top:8px"><thead><tr><th>Setup</th><th>Win rate</th><th>n</th><th>Net</th></tr></thead><tbody>${setups}</tbody></table>`
+            : "") +
           (insights ? `<ul style="margin-top:8px">${insights}</ul>` : "");
       }
 
       window.topstepx = async (action) => {
-        const r = await api("/api/topstepx/" + action, { method: action === "status" ? "GET" : "POST" }).then(j).catch((e) => ({ error: e.message }));
+        const r = await api("/api/topstepx/" + action, {
+          method: action === "status" ? "GET" : "POST",
+        })
+          .then(j)
+          .catch((e) => ({ error: e.message }));
         if (r.error) showError("TopstepX " + action + ": " + r.error);
         refresh();
       };
       window.testSms = async () => {
-        const r = await api("/api/alerts/sms/test", { method: "POST" }).then(j).catch((e) => ({ ok: false, info: e.message }));
+        const r = await api("/api/alerts/sms/test", { method: "POST" })
+          .then(j)
+          .catch((e) => ({ ok: false, info: e.message }));
         alert(r.ok ? "Test SMS sent." : "SMS not sent: " + (r.info || "error"));
       };
       window.testTelegram = async () => {
-        const r = await api("/api/alerts/telegram/test", { method: "POST" }).then(j).catch((e) => ({ ok: false, info: e.message }));
-        if (r.ok) { alert("Test Telegram sent — check your chat."); refresh(); return; }
+        const r = await api("/api/alerts/telegram/test", { method: "POST" })
+          .then(j)
+          .catch((e) => ({ ok: false, info: e.message }));
+        if (r.ok) {
+          alert("Test Telegram sent — check your chat.");
+          refresh();
+          return;
+        }
         const diag = [];
         if (r.httpStatus != null) diag.push("HTTP " + r.httpStatus);
         if (r.errorCode != null) diag.push("error_code " + r.errorCode);
         if (r.description) diag.push(r.description);
-        alert("Telegram not sent: " + (r.info || "error") + (diag.length ? "\n\n" + diag.join(" · ") : ""));
+        alert(
+          "Telegram not sent: " +
+            (r.info || "error") +
+            (diag.length ? "\n\n" + diag.join(" · ") : ""),
+        );
         refresh();
       };
       function readinessText(r) {
@@ -299,7 +682,7 @@
         return [
           "📋 LIVE-TRADING READINESS",
           `${yn(r.projectxAuth)} ProjectX auth (token + account)`,
-          `${yn(r.accountSync.connected)} Account sync — ID ${r.accountSync.accountId || "—"} · BP $${(r.accountSync.buyingPower||0).toLocaleString()} · Day P&L $${(r.accountSync.dailyPnL||0).toLocaleString()}`,
+          `${yn(r.accountSync.connected)} Account sync — ID ${r.accountSync.accountId || "—"} · BP $${(r.accountSync.buyingPower || 0).toLocaleString()} · Day P&L $${(r.accountSync.dailyPnL || 0).toLocaleString()}`,
           `${yn(r.telegram)} Telegram alert test`,
           `${yn(r.emergencyStop)} Emergency Stop tested`,
           `${yn(r.riskLimits.dailyLoss)} Max daily loss configured`,
@@ -308,45 +691,80 @@
           "",
           `Score: ${r.passed}/${r.total} (${r.scorePct}%)`,
           `Live trading: ${r.liveTradingEnabled ? "ENABLED" : "disabled"} · Overall: ${r.ready ? "READY" : "NOT READY"}`,
-          r.blockers && r.blockers.length ? "Blockers: " + r.blockers.join("; ") : "No blockers remaining.",
+          r.blockers && r.blockers.length
+            ? "Blockers: " + r.blockers.join("; ")
+            : "No blockers remaining.",
         ].join("\n");
       }
       window.readiness = async () => {
-        const r = await api("/api/readiness").then(j).catch((e) => ({ error: e.message }));
-        if (r.error) { showError("readiness: " + r.error); return; }
+        const r = await api("/api/readiness")
+          .then(j)
+          .catch((e) => ({ error: e.message }));
+        if (r.error) {
+          showError("readiness: " + r.error);
+          return;
+        }
         alert(readinessText(r));
       };
       window.sendReadiness = async () => {
-        const r = await api("/api/readiness/send", { method: "POST" }).then(j).catch((e) => ({ error: e.message }));
-        if (r.error) { showError("readiness send: " + r.error); return; }
+        const r = await api("/api/readiness/send", { method: "POST" })
+          .then(j)
+          .catch((e) => ({ error: e.message }));
+        if (r.error) {
+          showError("readiness send: " + r.error);
+          return;
+        }
         alert("Readiness report sent to Telegram.\n\n" + readinessText(r));
       };
       window.resetValidations = async () => {
-        if (!confirm("Reset Telegram/Emergency Stop/paper-approval validations? They will need re-testing before live trading can be enabled.")) return;
-        await api("/api/safety/reset", { method: "POST" }).then(j).catch((e) => showError("reset: " + e.message));
+        if (
+          !confirm(
+            "Reset Telegram/Emergency Stop/paper-approval validations? They will need re-testing before live trading can be enabled.",
+          )
+        )
+          return;
+        await api("/api/safety/reset", { method: "POST" })
+          .then(j)
+          .catch((e) => showError("reset: " + e.message));
         refresh();
       };
       window.telegramDebug = async () => {
-        const r = await api("/api/telegram/debug").then(j).catch((e) => ({ ok: false, info: e.message, chatIds: [] }));
+        const r = await api("/api/telegram/debug")
+          .then(j)
+          .catch((e) => ({ ok: false, info: e.message, chatIds: [] }));
         const lines = [(r.ok ? "✅ " : "⚠️ ") + r.info];
         if (r.presence) {
           lines.push("", "Env presence:");
-          for (const [k, v] of Object.entries(r.presence)) lines.push(`  ${k}: ${v}`);
+          for (const [k, v] of Object.entries(r.presence))
+            lines.push(`  ${k}: ${v}`);
         }
-        if (r.missing && r.missing.length) lines.push("", "Missing/unset: " + r.missing.join(", "));
-        if (r.chatIds && r.chatIds.length) lines.push("", "chat_id(s): " + r.chatIds.join(", "));
+        if (r.missing && r.missing.length)
+          lines.push("", "Missing/unset: " + r.missing.join(", "));
+        if (r.chatIds && r.chatIds.length)
+          lines.push("", "chat_id(s): " + r.chatIds.join(", "));
         alert(lines.join("\n"));
       };
       window.authTest = async () => {
-        const r = await api("/api/topstepx/auth-test", { method: "POST" }).then(j).catch((e) => ({ ok: false, message: e.message, present: {}, missing: [] }));
+        const r = await api("/api/topstepx/auth-test", { method: "POST" })
+          .then(j)
+          .catch((e) => ({
+            ok: false,
+            message: e.message,
+            present: {},
+            missing: [],
+          }));
         renderAuthPanel(r);
         const lines = [
           (r.ok ? "✅ " : "⚠️ ") + r.message,
           "",
-          "Stage: " + (r.stage || "n/a") + (r.httpStatus != null ? " (HTTP " + r.httpStatus + ")" : ""),
+          "Stage: " +
+            (r.stage || "n/a") +
+            (r.httpStatus != null ? " (HTTP " + r.httpStatus + ")" : ""),
           "Endpoint: " + (r.endpoint || "n/a"),
           "Auth method: " + (r.authMethod || "n/a"),
-          r.missing && r.missing.length ? "Missing: " + r.missing.join(", ") : "Missing: none",
+          r.missing && r.missing.length
+            ? "Missing: " + r.missing.join(", ")
+            : "Missing: none",
           "",
           "Env presence:",
           ...Object.entries(r.present || {}).map(([k, v]) => `  ${k}: ${v}`),
@@ -354,7 +772,9 @@
         alert(lines.join("\n"));
         refresh();
       };
-      function yesNo(v) { return v ? "yes" : "no"; }
+      function yesNo(v) {
+        return v ? "yes" : "no";
+      }
       function renderAuthPanel(r) {
         const projectxPass = !!r.tokenReceived;
         const ok = projectxPass ? "var(--ok)" : "var(--block)";
@@ -365,14 +785,19 @@
           <div class="tag">Account ID: <b>${r.accountId || "—"}</b> · Account name: <b>${r.accountName || "—"}</b></div>
           <div class="tag">Stage: ${r.stage || "n/a"} · HTTP: ${r.httpStatus == null ? "—" : r.httpStatus}</div>
           <div class="tag">Last error: ${r.lastError || r.message || "—"}</div>
-          <div class="tag">Missing: ${(r.missing && r.missing.length) ? r.missing.join(", ") : "none"}</div>`;
+          <div class="tag">Missing: ${r.missing && r.missing.length ? r.missing.join(", ") : "none"}</div>`;
       }
       function stateLabel(st) {
-        return ({
-          connected: "Connected", demo: "Demo (no creds)",
-          missing_credentials: "Missing credentials", invalid_credentials: "Invalid credentials",
-          token_not_returned: "Token not returned", disconnected: "Not connected",
-        })[st] || "Not connected";
+        return (
+          {
+            connected: "Connected",
+            demo: "Demo (no creds)",
+            missing_credentials: "Missing credentials",
+            invalid_credentials: "Invalid credentials",
+            token_not_returned: "Token not returned",
+            disconnected: "Not connected",
+          }[st] || "Not connected"
+        );
       }
       function stateColor(st) {
         if (st === "connected" || st === "demo") return "var(--ok)";
@@ -382,52 +807,103 @@
       function renderLiveChecklist(c) {
         if (!c) return "";
         const rows = [
-          ["ProjectX auth", c.projectxAuth], ["Token received", c.tokenReceived], ["Account found", c.accountFound],
-          ["Telegram test", c.telegramTestPassed], ["Emergency Stop tested", c.emergencyStopTested],
-          ["Max daily loss configured", c.maxDailyLossConfigured], ["Max position size configured", c.maxPositionSizeConfigured],
+          ["ProjectX auth", c.projectxAuth],
+          ["Token received", c.tokenReceived],
+          ["Account found", c.accountFound],
+          ["Telegram test", c.telegramTestPassed],
+          ["Emergency Stop tested", c.emergencyStopTested],
+          ["Max daily loss configured", c.maxDailyLossConfigured],
+          ["Max position size configured", c.maxPositionSizeConfigured],
           ["Paper approval test", c.paperApprovalTestPassed],
-        ].map(([label, ok]) => `${ok ? "✅" : "⚠️"} ${label}`).join(" · ");
+        ]
+          .map(([label, ok]) => `${ok ? "✅" : "⚠️"} ${label}`)
+          .join(" · ");
         return `<div class="tag">Live checklist: ${rows}</div><div class="tag">Live status: <b style="color:${c.ready ? "var(--ok)" : "var(--warn)"}">${c.ready ? "ready to enable" : "locked"}</b>${c.blockers && c.blockers.length ? " — " + c.blockers.join("; ") : ""}</div>`;
       }
       $("tradeModeBtn").addEventListener("click", async () => {
         const goLive = $("tradeModeBtn").dataset.live !== "1";
-        if (goLive && !confirm("Enable live trading only after all checks pass? Approved trades may be sent for real.")) return;
-        const r = await api("/api/settings", { method: "POST", body: JSON.stringify({ liveTrading: goLive }) }).then(j).catch((e) => ({ error: e.message }));
+        if (
+          goLive &&
+          !confirm(
+            "Enable live trading only after all checks pass? Approved trades may be sent for real.",
+          )
+        )
+          return;
+        const r = await api("/api/settings", {
+          method: "POST",
+          body: JSON.stringify({ liveTrading: goLive }),
+        })
+          .then(j)
+          .catch((e) => ({ error: e.message }));
         if (r.error) showError("toggle: " + r.error);
         refresh();
       });
       $("modeSelect").addEventListener("change", async () => {
         const mode = $("modeSelect").value;
-        if (mode === "full_auto" && !confirm("Switch to FULL AUTO? Avrrio may auto-execute trades when every safety gate passes.")) { refresh(); return; }
-        await api("/api/mode", { method: "POST", body: JSON.stringify({ mode }) }).then(j).catch((e) => showError("mode: " + e.message));
+        if (
+          mode === "full_auto" &&
+          !confirm(
+            "Switch to FULL AUTO? Avrrio may auto-execute trades when every safety gate passes.",
+          )
+        ) {
+          refresh();
+          return;
+        }
+        await api("/api/mode", {
+          method: "POST",
+          body: JSON.stringify({ mode }),
+        })
+          .then(j)
+          .catch((e) => showError("mode: " + e.message));
         refresh();
       });
 
       function orderTypeLabel(orderType) {
-        return { limit: "Limit", stop_market: "Stop Market", market: "Market" }[orderType] ?? orderType;
+        return (
+          { limit: "Limit", stop_market: "Stop Market", market: "Market" }[
+            orderType
+          ] ?? orderType
+        );
       }
 
       async function loadRecs() {
         const recs = await api("/api/recommendations").then(j);
         $("recs").innerHTML =
-          recs.slice().reverse().map((r) => {
-            const viol = r.violations.map((v) => `<li class="v-${v.severity}">[${v.severity}] ${v.message}</li>`).join("");
-            const ops = r.consensus.opinions.map((o) => `${o.provider}: ${o.recommendation}${o.available ? " ("+(o.confidence*100).toFixed(0)+"%)" : " —"}`).join(" · ");
-            const canAct = r.status === "pending";
-            return `<div class="rec">
-              <div><b>${r.symbol} ${r.side.toUpperCase()} ×${r.size}</b> <span class="pill ${r.status}">${r.status}</span> ${r.setupName ? '<span class="tag">'+r.setupName+'</span>' : ''}</div>
+          recs
+            .slice()
+            .reverse()
+            .map((r) => {
+              const viol = r.violations
+                .map(
+                  (v) =>
+                    `<li class="v-${v.severity}">[${v.severity}] ${v.message}</li>`,
+                )
+                .join("");
+              const ops = r.consensus.opinions
+                .map(
+                  (o) =>
+                    `${o.provider}: ${o.recommendation}${o.available ? " (" + (o.confidence * 100).toFixed(0) + "%)" : " —"}`,
+                )
+                .join(" · ");
+              const canAct = r.status === "pending";
+              return `<div class="rec">
+              <div><b>${r.symbol} ${r.side.toUpperCase()} ×${r.size}</b> <span class="pill ${r.status}">${r.status}</span> ${r.setupName ? '<span class="tag">' + r.setupName + "</span>" : ""}</div>
               <div class="tag">Entry ${r.entry} · Stop ${r.stopLoss} · Target ${r.target} · Risk $${r.riskAmount.toFixed(0)} · R:R ${r.rewardRiskRatio.toFixed(2)}</div>
               <div class="tag">Order Type: <b>${orderTypeLabel(r.orderType)}</b> — ${r.orderTypeRationale}</div>
-              <div class="tag">Consensus: <b>${r.consensus.recommendation}</b> (${r.consensus.agreement}/${r.consensus.available} agree, ${(r.consensus.confidence*100).toFixed(0)}%) · ${ops}</div>
-              <div class="tag">News: ${r.news.blocked ? '<span class="v-block">'+r.news.reason+'</span>' : 'clear'} · Auto-eligible: ${r.autoEligible ? "yes" : "no"}${r.expiresAt ? ' · valid until '+new Date(r.expiresAt).toLocaleTimeString() : ''}</div>
-              ${r.grade ? `<div class="tag">Confidence: <b>${r.grade.confidence}%</b> · Grade: <b>${r.grade.grade}</b> · Trend ${Math.round(r.grade.breakdown.trend)} · Momentum ${Math.round(r.grade.breakdown.momentum)} · Volume ${Math.round(r.grade.breakdown.volume)} · Structure ${Math.round(r.grade.breakdown.structure)} · Risk ${r.grade.riskApproved ? "Approved" : "Blocked"}</div>` : ''}
-              ${viol ? '<ul>'+viol+'</ul>' : ''}
-              ${r.orderResult ? '<div class="tag">Order: '+r.orderResult.orderId+(r.orderResult.paper?" (paper)":" (LIVE)")+'</div>' : ''}
-              ${canAct ? `<div class="actions">
+              <div class="tag">Consensus: <b>${r.consensus.recommendation}</b> (${r.consensus.agreement}/${r.consensus.available} agree, ${(r.consensus.confidence * 100).toFixed(0)}%) · ${ops}</div>
+              <div class="tag">News: ${r.news.blocked ? '<span class="v-block">' + r.news.reason + "</span>" : "clear"} · Auto-eligible: ${r.autoEligible ? "yes" : "no"}${r.expiresAt ? " · valid until " + new Date(r.expiresAt).toLocaleTimeString() : ""}</div>
+              ${r.grade ? `<div class="tag">Confidence: <b>${r.grade.confidence}%</b> · Grade: <b>${r.grade.grade}</b> · Trend ${Math.round(r.grade.breakdown.trend)} · Momentum ${Math.round(r.grade.breakdown.momentum)} · Volume ${Math.round(r.grade.breakdown.volume)} · Structure ${Math.round(r.grade.breakdown.structure)} · Risk ${r.grade.riskApproved ? "Approved" : "Blocked"}</div>` : ""}
+              ${viol ? "<ul>" + viol + "</ul>" : ""}
+              ${r.orderResult ? '<div class="tag">Order: ' + r.orderResult.orderId + (r.orderResult.paper ? " (paper)" : " (LIVE)") + "</div>" : ""}
+              ${
+                canAct
+                  ? `<div class="actions">
                   <button class="btn-ok" onclick="approve('${r.id}','immediate')">Approve now</button>
                   <button class="btn-primary" onclick="approve('${r.id}','pre-approved')">Pre-approve (wait for entry)</button>
                   <button class="btn-danger" onclick="reject('${r.id}')">Reject</button>
-                </div>` : ''}
+                </div>`
+                  : ""
+              }
               <div class="chat" id="chat-${r.id}">
                 <div class="tag" style="margin-top:8px">💬 Ask Avrrio about this trade <span class="tag" style="color:var(--muted)">(advisory only — never trades)</span></div>
                 <div class="chatlog" id="chatlog-${r.id}"></div>
@@ -446,13 +922,63 @@
                 </div>
               </div>
             </div>`;
-          }).join("") || '<div class="tag">No recommendations yet.</div>';
+            })
+            .join("") || '<div class="tag">No recommendations yet.</div>';
       }
+
+      function managementEmoji(action) {
+        return (
+          { hold: "🟢", tighten_stop: "🟡", take_partial: "🟠", exit: "🔴" }[
+            action
+          ] ?? "⚪"
+        );
+      }
+      function managementLabel(action) {
+        return (
+          {
+            hold: "Hold",
+            tighten_stop: "Tighten Stop",
+            take_partial: "Take Partial Profit",
+            exit: "Exit Position",
+          }[action] ?? "—"
+        );
+      }
+      async function loadPositions() {
+        const positions = await api("/api/positions/open").then(j);
+        $("positions").innerHTML =
+          positions
+            .map(
+              (r) => `<div class="rec">
+              <div><b>${r.symbol} ${r.side.toUpperCase()} ×${r.size}</b> <span class="pill ${r.status}">${r.status}</span></div>
+              <div class="tag">Entry ${r.entry} · Stop ${r.stopLoss} · Target ${r.target}</div>
+              ${r.lastManagementAction ? `<div class="tag">${managementEmoji(r.lastManagementAction)} <b>${managementLabel(r.lastManagementAction)}</b></div>` : '<div class="tag">Awaiting first management review…</div>'}
+              <div class="actions">
+                <button class="btn-ghost" onclick="closePosition('${r.id}')">Mark closed</button>
+              </div>
+            </div>`,
+            )
+            .join("") || '<div class="tag">No open positions.</div>';
+      }
+      window.closePosition = async (id) => {
+        if (
+          !confirm(
+            "Mark this position as closed? This stops further management alerts.",
+          )
+        )
+          return;
+        await api(`/api/positions/${id}/close`, { method: "POST" })
+          .then(j)
+          .catch((e) => showError("close: " + e.message));
+        refresh();
+      };
 
       async function loadAudit() {
         const rows = await api("/api/audit").then(j);
         $("audit").querySelector("tbody").innerHTML = rows
-          .map((e) => `<tr><td>${new Date(e.timestamp).toLocaleTimeString()}</td><td>${e.type}</td><td>${e.actor}</td><td class="tag">${JSON.stringify(e.details)}</td></tr>`)
+          .map(
+            (e) =>
+              `<tr><td>${new Date(e.timestamp).toLocaleTimeString()}</td><td>${e.type}</td><td>${e.actor}</td><td class="tag">${JSON.stringify(e.details)}</td></tr>`,
+          )
           .join("");
       }
 
@@ -471,19 +997,34 @@
         const list = SYMBOLS.filter((s) => !cls || s.assetClass === cls);
         $("symbolPicker").innerHTML =
           '<option value="">— pick —</option>' +
-          list.map((s) => `<option value="${s.symbol}">${s.symbol} — ${s.name}${s.tradable ? "" : " [watchlist]"}</option>`).join("");
+          list
+            .map(
+              (s) =>
+                `<option value="${s.symbol}">${s.symbol} — ${s.name}${s.tradable ? "" : " [watchlist]"}</option>`,
+            )
+            .join("");
       }
       function updateNote() {
         const sym = ($("symbol").value || "").toUpperCase();
         const info = SYMBOLS.find((s) => s.symbol === sym);
         const note = $("tradeNote");
-        if (info && info.tradable) { note.textContent = "✅ Tradable (futures)"; note.style.color = "var(--ok)"; }
-        else if (info) { note.textContent = "👁 Watchlist only — analysis, not tradable"; note.style.color = "var(--warn)"; }
-        else { note.textContent = "⚠ Manual symbol — not tradable"; note.style.color = "var(--warn)"; }
+        if (info && info.tradable) {
+          note.textContent = "✅ Tradable (futures)";
+          note.style.color = "var(--ok)";
+        } else if (info) {
+          note.textContent = "👁 Watchlist only — analysis, not tradable";
+          note.style.color = "var(--warn)";
+        } else {
+          note.textContent = "⚠ Manual symbol — not tradable";
+          note.style.color = "var(--warn)";
+        }
       }
       $("assetClass").addEventListener("change", populatePicker);
       $("symbolPicker").addEventListener("change", () => {
-        if ($("symbolPicker").value) { $("symbol").value = $("symbolPicker").value; updateNote(); }
+        if ($("symbolPicker").value) {
+          $("symbol").value = $("symbolPicker").value;
+          updateNote();
+        }
       });
       $("symbol").addEventListener("input", updateNote);
 
@@ -492,7 +1033,9 @@
           $("cFut").checked ? "futures" : "",
           $("cStk").checked ? "stocks" : "",
           $("cCry").checked ? "crypto" : "",
-        ].filter(Boolean).join(",");
+        ]
+          .filter(Boolean)
+          .join(",");
         // Staged progress so "Scan now" never just hangs silently.
         const stages = [
           "Connecting to backend",
@@ -503,7 +1046,8 @@
           "Generating opportunities",
         ];
         let si = 0;
-        $("scan").innerHTML = `<div class="tag" id="scanStage">⏳ ${stages[0]}…</div>`;
+        $("scan").innerHTML =
+          `<div class="tag" id="scanStage">⏳ ${stages[0]}…</div>`;
         const timer = setInterval(() => {
           si = Math.min(si + 1, stages.length - 1);
           const el = $("scanStage");
@@ -514,61 +1058,100 @@
           rows = await api(`/api/scan?limit=8&classes=${classes}`).then(j);
         } catch (e) {
           clearInterval(timer);
-          $("scan").innerHTML = `<div class="v-block">Scan failed: ${e.message}</div>`;
+          $("scan").innerHTML =
+            `<div class="v-block">Scan failed: ${e.message}</div>`;
           return;
         }
         clearInterval(timer);
-        $("scan").innerHTML = rows.map((r, i) => {
-          const color = r.score >= 80 ? "var(--ok)" : r.score >= 60 ? "var(--warn)" : "var(--muted)";
-          return `<div class="rec">
+        $("scan").innerHTML =
+          rows
+            .map((r, i) => {
+              const color =
+                r.score >= 80
+                  ? "var(--ok)"
+                  : r.score >= 60
+                    ? "var(--warn)"
+                    : "var(--muted)";
+              return `<div class="rec">
             <div><b>${i + 1}. ${r.symbol}</b> <span class="tag">${r.name}</span> <span class="pill" style="border-color:${color};color:${color}">Score ${r.score}/100</span>
               <span class="tag">${r.direction} · ${(r.confidence * 100).toFixed(0)}%${r.tradable ? "" : " · watchlist"}</span></div>
             <div class="tag">${r.reasons.map((x) => "✓ " + x).join("  ")}</div>
-            <div class="tag">Trend ${r.components.trend|0} · Vol ${r.components.volume|0} · News ${r.components.news|0} · Mom ${r.components.momentum|0} · Risk ${r.components.risk|0}</div>
+            <div class="tag">Trend ${r.components.trend | 0} · Vol ${r.components.volume | 0} · News ${r.components.news | 0} · Mom ${r.components.momentum | 0} · Risk ${r.components.risk | 0}</div>
             ${r.tradable ? `<div class="actions"><button class="btn-ghost" style="width:auto;padding:6px 14px" onclick="useSymbol('${r.symbol}','${r.assetClass}')">Use in propose ↓</button></div>` : ""}
           </div>`;
-        }).join("") || '<div class="tag">No results.</div>';
+            })
+            .join("") || '<div class="tag">No results.</div>';
       }
       window.useSymbol = (sym, cls) => {
-        $("assetClass").value = cls; populatePicker();
-        $("symbol").value = sym; $("symbolPicker").value = sym; updateNote();
-        document.getElementById("symbol").scrollIntoView({ behavior: "smooth", block: "center" });
+        $("assetClass").value = cls;
+        populatePicker();
+        $("symbol").value = sym;
+        $("symbolPicker").value = sym;
+        updateNote();
+        document
+          .getElementById("symbol")
+          .scrollIntoView({ behavior: "smooth", block: "center" });
       };
       $("schedToggle").addEventListener("click", async () => {
         const enable = $("schedToggle").dataset.enabled !== "1";
         const intervalMinutes = Number($("schedInterval").value) || 20;
-        await api("/api/scheduler/config", { method: "POST", body: JSON.stringify({ enabled: enable, intervalMinutes }) }).then(j).catch((e) => showError("scheduler: " + e.message));
+        await api("/api/scheduler/config", {
+          method: "POST",
+          body: JSON.stringify({ enabled: enable, intervalMinutes }),
+        })
+          .then(j)
+          .catch((e) => showError("scheduler: " + e.message));
         refresh();
       });
       $("scanBtn").addEventListener("click", scan);
       $("cycleBtn").addEventListener("click", async () => {
         $("cycleBtn").textContent = "Running…";
-        const r = await api("/api/scheduler/run", { method: "POST" }).then(j).catch((e) => ({ error: e.message }));
+        const r = await api("/api/scheduler/run", { method: "POST" })
+          .then(j)
+          .catch((e) => ({ error: e.message }));
         $("cycleBtn").textContent = "Run scan cycle (alert worthy)";
-        if (r.error) { showError("scan cycle: " + r.error); return; }
-        alert(`Scanned ${r.scanned}, qualifying ${r.qualifying}, alerted ${r.alerted}` + (r.refs && r.refs.length ? "\n" + r.refs.join(", ") : "\nNo qualifying setups (nothing sent)."));
+        if (r.error) {
+          showError("scan cycle: " + r.error);
+          return;
+        }
+        alert(
+          `Scanned ${r.scanned}, qualifying ${r.qualifying}, alerted ${r.alerted}` +
+            (r.refs && r.refs.length
+              ? "\n" + r.refs.join(", ")
+              : "\nNo qualifying setups (nothing sent)."),
+        );
         refresh();
       });
 
       window.approve = async (id, mode, override) => {
-        const label = mode === "pre-approved"
-          ? "Pre-approve this trade? It will execute only when the entry is reached and all checks still pass."
-          : "Approve and place this trade now?";
+        const label =
+          mode === "pre-approved"
+            ? "Pre-approve this trade? It will execute only when the entry is reached and all checks still pass."
+            : "Approve and place this trade now?";
         if (!override && !confirm(label)) return;
         const r = await api(`/api/recommendations/${id}/approve`, {
-          method: "POST", body: JSON.stringify({ mode, override: !!override }),
+          method: "POST",
+          body: JSON.stringify({ mode, override: !!override }),
         }).then(j);
         if (r && r.overrideRequired) {
           const c = r.consensus || {};
-          const ok = confirm(`⚠️ AI consensus does NOT support this trade — recommendation "${c.recommendation}" (agreement ${c.agreement}/${c.available}).\n\nApprove anyway (override the AI)?`);
-          if (!ok) { refresh(); return; }
+          const ok = confirm(
+            `⚠️ AI consensus does NOT support this trade — recommendation "${c.recommendation}" (agreement ${c.agreement}/${c.available}).\n\nApprove anyway (override the AI)?`,
+          );
+          if (!ok) {
+            refresh();
+            return;
+          }
           return window.approve(id, mode, true); // re-submit with explicit override
         }
         if (r.error) alert("Error: " + r.error);
         refresh();
       };
       window.reject = async (id) => {
-        await api(`/api/recommendations/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: "operator rejected" }) });
+        await api(`/api/recommendations/${id}/reject`, {
+          method: "POST",
+          body: JSON.stringify({ reason: "operator rejected" }),
+        });
         refresh();
       };
 
@@ -577,7 +1160,7 @@
         if (!log) return;
         const div = document.createElement("div");
         div.className = "chatmsg " + who;
-        div.innerHTML = `<b>${who === "you" ? "You" : "Avrrio"}:</b> ${String(text).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/\n/g,"<br>")}`;
+        div.innerHTML = `<b>${who === "you" ? "You" : "Avrrio"}:</b> ${String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>")}`;
         log.appendChild(div);
         log.scrollTop = log.scrollHeight;
       }
@@ -589,7 +1172,10 @@
         chatAppend(id, "you", q);
         chatAppend(id, "ai", "…thinking");
         try {
-          const r = await api(`/api/recommendations/${id}/discuss`, { method: "POST", body: JSON.stringify({ question: q }) }).then(j);
+          const r = await api(`/api/recommendations/${id}/discuss`, {
+            method: "POST",
+            body: JSON.stringify({ question: q }),
+          }).then(j);
           $(`chatlog-${id}`).lastChild.remove();
           chatAppend(id, "ai", r.answer || "(no answer)");
         } catch (e) {
@@ -605,9 +1191,16 @@
         chatAppend(id, "you", "What if: " + s);
         chatAppend(id, "ai", "…recomputing");
         try {
-          const r = await api(`/api/recommendations/${id}/whatif`, { method: "POST", body: JSON.stringify({ scenario: s }) }).then(j);
+          const r = await api(`/api/recommendations/${id}/whatif`, {
+            method: "POST",
+            body: JSON.stringify({ scenario: s }),
+          }).then(j);
           $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(id, "ai", r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""));
+          chatAppend(
+            id,
+            "ai",
+            r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""),
+          );
         } catch (e) {
           $(`chatlog-${id}`).lastChild.remove();
           chatAppend(id, "ai", "Error: " + e.message);
@@ -617,9 +1210,16 @@
         chatAppend(id, "you", "Debate this trade (Bull vs Bear)");
         chatAppend(id, "ai", "…weighing both sides");
         try {
-          const r = await api(`/api/recommendations/${id}/debate`, { method: "POST", body: JSON.stringify({}) }).then(j);
+          const r = await api(`/api/recommendations/${id}/debate`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          }).then(j);
           $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(id, "ai", r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""));
+          chatAppend(
+            id,
+            "ai",
+            r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""),
+          );
         } catch (e) {
           $(`chatlog-${id}`).lastChild.remove();
           chatAppend(id, "ai", "Error: " + e.message);
@@ -629,19 +1229,33 @@
         chatAppend(id, "you", "Review this trade (Coach)");
         chatAppend(id, "ai", "…reviewing against your discipline rules");
         try {
-          const r = await api(`/api/recommendations/${id}/coach`, { method: "POST", body: JSON.stringify({}) }).then(j);
+          const r = await api(`/api/recommendations/${id}/coach`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          }).then(j);
           $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(id, "ai", r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""));
+          chatAppend(
+            id,
+            "ai",
+            r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""),
+          );
         } catch (e) {
           $(`chatlog-${id}`).lastChild.remove();
           chatAppend(id, "ai", "Error: " + e.message);
         }
       };
       window.memcheck = async (id) => {
-        chatAppend(id, "you", "Does this resemble a pattern I've struggled with?");
+        chatAppend(
+          id,
+          "you",
+          "Does this resemble a pattern I've struggled with?",
+        );
         chatAppend(id, "ai", "…checking your history");
         try {
-          const r = await api(`/api/recommendations/${id}/memory`, { method: "POST", body: JSON.stringify({}) }).then(j);
+          const r = await api(`/api/recommendations/${id}/memory`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          }).then(j);
           $(`chatlog-${id}`).lastChild.remove();
           chatAppend(id, "ai", r.message || "(no memory data)");
         } catch (e) {
@@ -661,24 +1275,42 @@
           stopLoss: Number($("stop").value),
           target: Number($("target").value),
         };
-        const r = await api("/api/propose", { method: "POST", body: JSON.stringify(idea) }).then(j);
-        if (r.error) { $("proposeErr").textContent = r.error; return; }
+        const r = await api("/api/propose", {
+          method: "POST",
+          body: JSON.stringify(idea),
+        }).then(j);
+        if (r.error) {
+          $("proposeErr").textContent = r.error;
+          return;
+        }
         refresh();
       });
 
       $("killBtn").addEventListener("click", async () => {
         const engaged = $("killBtn").dataset.engaged === "1";
         if (engaged) {
-          await api("/api/kill-switch", { method: "POST", body: JSON.stringify({ engage: false }) });
+          await api("/api/kill-switch", {
+            method: "POST",
+            body: JSON.stringify({ engage: false }),
+          });
         } else {
-          if (!confirm("Engage Emergency Stop? All trading will be blocked.")) return;
-          await api("/api/kill-switch", { method: "POST", body: JSON.stringify({ engage: true, reason: "operator emergency stop" }) });
+          if (!confirm("Engage Emergency Stop? All trading will be blocked."))
+            return;
+          await api("/api/kill-switch", {
+            method: "POST",
+            body: JSON.stringify({
+              engage: true,
+              reason: "operator emergency stop",
+            }),
+          });
         }
         refresh();
       });
 
       $("loginBtn").addEventListener("click", login);
-      $("password").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
+      $("password").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") login();
+      });
     </script>
   </body>
 </html>

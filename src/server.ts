@@ -35,7 +35,11 @@ async function start() {
 
   // Health check — no external I/O, never 502s.
   app.get(["/api/health", "/healthz"], (_req, res) => {
-    res.json({ ok: true, service: "avrrio-trading-engine", time: new Date().toISOString() });
+    res.json({
+      ok: true,
+      service: "avrrio-trading-engine",
+      time: new Date().toISOString(),
+    });
   });
 
   app.use(express.static(join(here, "dashboard", "public")));
@@ -67,7 +71,8 @@ async function start() {
       try {
         account = await engine.getAccount();
       } catch (err) {
-        accountError = err instanceof Error ? err.message : "account unavailable";
+        accountError =
+          err instanceof Error ? err.message : "account unavailable";
       }
       res.json({
         account,
@@ -109,6 +114,19 @@ async function start() {
     res.json(engine.recommendations.list());
   });
 
+  // Live Trade Management — open positions under continuous re-analysis.
+  app.get("/api/positions/open", guard, (_req, res) => {
+    res.json(engine.recommendations.openPositions());
+  });
+
+  app.post(
+    "/api/positions/:id/close",
+    guard,
+    wrap(async (req, res) =>
+      res.json(await engine.closePosition(req.params.id ?? "", "operator")),
+    ),
+  );
+
   app.get(
     "/api/audit",
     guard,
@@ -118,7 +136,9 @@ async function start() {
   app.get(
     "/api/snapshot/:symbol",
     guard,
-    wrap(async (req, res) => res.json(await engine.snapshot(req.params.symbol ?? ""))),
+    wrap(async (req, res) =>
+      res.json(await engine.snapshot(req.params.symbol ?? "")),
+    ),
   );
 
   app.get("/api/symbols", guard, (_req, res) => res.json(SYMBOLS));
@@ -151,7 +171,9 @@ async function start() {
   app.post(
     "/api/propose",
     guard,
-    wrap(async (req, res) => res.json(await engine.propose(req.body as ProposeInput))),
+    wrap(async (req, res) =>
+      res.json(await engine.propose(req.body as ProposeInput)),
+    ),
   );
 
   app.post(
@@ -192,7 +214,9 @@ async function start() {
     guard,
     wrap(async (req, res) => {
       const { question } = req.body as { question?: string };
-      res.json(await engine.discussTrade(req.params.id ?? "", String(question ?? "")));
+      res.json(
+        await engine.discussTrade(req.params.id ?? "", String(question ?? "")),
+      );
     }),
   );
 
@@ -202,7 +226,9 @@ async function start() {
     guard,
     wrap(async (req, res) => {
       const { scenario } = req.body as { scenario?: string };
-      res.json(await engine.whatIf(req.params.id ?? "", String(scenario ?? "")));
+      res.json(
+        await engine.whatIf(req.params.id ?? "", String(scenario ?? "")),
+      );
     }),
   );
 
@@ -210,19 +236,25 @@ async function start() {
   app.post(
     "/api/recommendations/:id/debate",
     guard,
-    wrap(async (req, res) => res.json(await engine.debate(req.params.id ?? ""))),
+    wrap(async (req, res) =>
+      res.json(await engine.debate(req.params.id ?? "")),
+    ),
   );
   app.post(
     "/api/debate/:symbol",
     guard,
-    wrap(async (req, res) => res.json(await engine.debate(req.params.symbol ?? ""))),
+    wrap(async (req, res) =>
+      res.json(await engine.debate(req.params.symbol ?? "")),
+    ),
   );
 
   // Trade Coach — post-trade review of a recommendation (id/ref).
   app.post(
     "/api/recommendations/:id/coach",
     guard,
-    wrap(async (req, res) => res.json(await engine.coachTrade(req.params.id ?? ""))),
+    wrap(async (req, res) =>
+      res.json(await engine.coachTrade(req.params.id ?? "")),
+    ),
   );
 
   // Avrrio Memory — habit stats and per-trade "resembles a pattern" check.
@@ -236,10 +268,8 @@ async function start() {
       summary: engine.memorySummaryText(),
     });
   });
-  app.post(
-    "/api/recommendations/:id/memory",
-    guard,
-    (req, res) => res.json(engine.assessMemory(req.params.id ?? "")),
+  app.post("/api/recommendations/:id/memory", guard, (req, res) =>
+    res.json(engine.assessMemory(req.params.id ?? "")),
   );
 
   // --- kill switch (protected) -----------------------------------------
@@ -247,7 +277,10 @@ async function start() {
     "/api/kill-switch",
     guard,
     wrap(async (req, res) => {
-      const { engage, reason } = req.body as { engage?: boolean; reason?: string };
+      const { engage, reason } = req.body as {
+        engage?: boolean;
+        reason?: string;
+      };
       if (engage) {
         await engine.engageKill(reason ?? "manual", "operator");
         res.json(engine.killSwitch.status());
@@ -259,7 +292,9 @@ async function start() {
   );
 
   // --- TopstepX connection (protected) ---------------------------------
-  app.get("/api/topstepx/status", (_req, res) => res.json(engine.topstepxStatus()));
+  app.get("/api/topstepx/status", (_req, res) =>
+    res.json(engine.topstepxStatus()),
+  );
   app.post(
     "/api/topstepx/connect",
     guard,
@@ -338,14 +373,18 @@ async function start() {
   // Live-trading readiness checklist (read-only).
   app.get(
     "/api/settings/live-checklist",
-    wrap(async (_req, res) => res.json(await engine.liveTradingChecklist(false))),
+    wrap(async (_req, res) =>
+      res.json(await engine.liveTradingChecklist(false)),
+    ),
   );
 
   // AI assistant health (read-only): status, model, last success, last error.
   app.get("/api/ai-health", (_req, res) => res.json(engine.aiHealth()));
 
   // Full pipeline diagnostics (read-only): scheduler/telegram/AI/topstepx/last scan.
-  app.get("/api/diagnostics", (_req, res) => res.json(engine.pipelineDiagnostics()));
+  app.get("/api/diagnostics", (_req, res) =>
+    res.json(engine.pipelineDiagnostics()),
+  );
 
   // --- safety validation phase: readiness report + reset ---------------
   // Consolidated readiness report (read-only; re-checks auth live).
@@ -357,7 +396,9 @@ async function start() {
   app.post(
     "/api/readiness/send",
     guard,
-    wrap(async (_req, res) => res.json(await engine.sendReadinessReport("operator"))),
+    wrap(async (_req, res) =>
+      res.json(await engine.sendReadinessReport("operator")),
+    ),
   );
   // Clear the operator-completed safety validations (forces re-verification).
   app.post(
@@ -434,11 +475,16 @@ async function start() {
     "/api/alerts/sms/inbound",
     wrap(async (req, res) => {
       const body = req.body as { From?: string; Body?: string };
-      const reply = await engine.handleInboundSms(body.From ?? "", body.Body ?? "");
+      const reply = await engine.handleInboundSms(
+        body.From ?? "",
+        body.Body ?? "",
+      );
       // Reply via TwiML so Twilio texts the confirmation back to the sender.
       res
         .type("text/xml")
-        .send(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(reply)}</Message></Response>`);
+        .send(
+          `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escapeXml(reply)}</Message></Response>`,
+        );
     }),
   );
 
@@ -450,22 +496,32 @@ async function start() {
     "/api/approve-trade",
     wrap(async (req, res) => {
       try {
-        const mode = req.query.mode === "immediate" ? "immediate" : "pre-approved";
+        const mode =
+          req.query.mode === "immediate" ? "immediate" : "pre-approved";
         const result = await engine.approveByToken(
           String(req.query.id ?? ""),
           String(req.query.token ?? ""),
           mode,
         );
-        res.status(200).send(
-          page(
-            "✅ Approved",
-            result.armed
-              ? "Trade pre-approved. It will execute when the entry is reached and all checks still pass, before it expires."
-              : `Trade approved and submitted (${result.result?.paper ? "paper" : "LIVE"}).`,
-          ),
-        );
+        res
+          .status(200)
+          .send(
+            page(
+              "✅ Approved",
+              result.armed
+                ? "Trade pre-approved. It will execute when the entry is reached and all checks still pass, before it expires."
+                : `Trade approved and submitted (${result.result?.paper ? "paper" : "LIVE"}).`,
+            ),
+          );
       } catch (err) {
-        res.status(400).send(page("⚠️ Could not approve", err instanceof Error ? err.message : "error"));
+        res
+          .status(400)
+          .send(
+            page(
+              "⚠️ Could not approve",
+              err instanceof Error ? err.message : "error",
+            ),
+          );
       }
     }),
   );
@@ -474,10 +530,20 @@ async function start() {
     "/api/reject-trade",
     wrap(async (req, res) => {
       try {
-        await engine.rejectByToken(String(req.query.id ?? ""), String(req.query.token ?? ""));
+        await engine.rejectByToken(
+          String(req.query.id ?? ""),
+          String(req.query.token ?? ""),
+        );
         res.status(200).send(page("🛑 Rejected", "The setup was rejected."));
       } catch (err) {
-        res.status(400).send(page("⚠️ Could not reject", err instanceof Error ? err.message : "error"));
+        res
+          .status(400)
+          .send(
+            page(
+              "⚠️ Could not reject",
+              err instanceof Error ? err.message : "error",
+            ),
+          );
       }
     }),
   );
@@ -485,11 +551,14 @@ async function start() {
   // --- error middleware (last) — always responds, never hangs ----------
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     console.error("API error:", err);
-    res.status(500).json({ error: err instanceof Error ? err.message : "internal error" });
+    res
+      .status(500)
+      .json({ error: err instanceof Error ? err.message : "internal error" });
   });
 
   // --- pre-approved queue maintenance loop -----------------------------
-  const tick = () => engine.maintain().catch((e) => console.error("maintain error:", e));
+  const tick = () =>
+    engine.maintain().catch((e) => console.error("maintain error:", e));
   setInterval(tick, 20_000);
 
   const port = engine.config.dashboard.port;
@@ -498,21 +567,23 @@ async function start() {
     for (const w of engine.warnings()) console.warn(`⚠️  ${w}`);
     engine.scheduler.start(); // no-op unless SCHEDULED_SCANNER_ENABLED=true
     // Best-effort: register the Telegram webhook so button presses are delivered.
-    if (engine.telegram.enabled && engine.config.publicBaseUrl.startsWith("https")) {
+    if (
+      engine.telegram.enabled &&
+      engine.config.publicBaseUrl.startsWith("https")
+    ) {
       const url = `${engine.config.publicBaseUrl.replace(/\/$/, "")}/api/telegram/webhook`;
       engine
         .telegramSetWebhook(url)
-        .then((r) => console.log(`Telegram webhook: ${r.ok ? "set " + url : r.info}`))
+        .then((r) =>
+          console.log(`Telegram webhook: ${r.ok ? "set " + url : r.info}`),
+        )
         .catch(() => {});
     }
   });
 }
 
 function escapeXml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 start().catch((err) => {
