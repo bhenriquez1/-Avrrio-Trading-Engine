@@ -26,6 +26,7 @@ function fakeRec(): Recommendation {
     riskApproved: true,
     violations: [],
     avrrioScore: 91,
+    grade: null,
     consensus: {
       recommendation: "long",
       confidence: 0.84,

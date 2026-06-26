@@ -24,6 +24,7 @@ function rec(over: Partial<Recommendation> = {}): Recommendation {
     riskApproved: true,
     violations: [],
     avrrioScore: 88,
+    grade: null,
     consensus: {
       recommendation: "long",
       confidence: 0.5,

@@ -248,9 +248,18 @@ export function formatAlert(rec: Recommendation): string {
     `Size: ${rec.size}`,
     "",
     `Risk/Reward: ${rr}`,
-    `Confidence: ${(rec.consensus.confidence * 100).toFixed(0)}%`,
+    `AI Consensus: ${(rec.consensus.confidence * 100).toFixed(0)}%`,
     `Avrrio Score: ${rec.avrrioScore ?? "n/a"}`,
     "",
+    ...(rec.grade
+      ? [
+          `Confidence: ${rec.grade.confidence}%`,
+          `Grade: ${rec.grade.grade}`,
+          `Trend: ${Math.round(rec.grade.breakdown.trend)} · Momentum: ${Math.round(rec.grade.breakdown.momentum)} · Volume: ${Math.round(rec.grade.breakdown.volume)} · Structure: ${Math.round(rec.grade.breakdown.structure)}`,
+          `Risk: ${rec.grade.riskApproved ? "Approved" : "Blocked"}`,
+          "",
+        ]
+      : []),
     `Setup: ${rec.setupName ?? "scanner signal"}`,
     `Why allowed: ${rec.riskApproved ? "risk checks passed" : "see review"} · news ${rec.news?.blocked ? "BLOCKED" : "clear"} · consensus ${rec.consensus.recommendation}`,
     ...(rec.violations && rec.violations.length

@@ -50,6 +50,7 @@ test("formatSignalSms includes ref, levels, and reply instructions", () => {
     target: 20080,
     riskAmount: 800,
     avrrioScore: 91,
+    grade: null,
     consensus: { confidence: 0.84 },
   } as Recommendation;
   const text = formatSignalSms(rec);

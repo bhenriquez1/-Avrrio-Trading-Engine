@@ -21,6 +21,7 @@ function rec(): Recommendation {
     riskApproved: true,
     violations: [],
     avrrioScore: 95,
+    grade: null,
     consensus: { recommendation: "long", confidence: 0.92, agreement: 2, available: 2, opinions: [] },
     news: { blocked: false, reason: "clear" },
     autoEligible: false,
@@ -41,8 +42,35 @@ test("formatAlert includes all required fields", () => {
   assert.match(text, /Stop: 22120/);
   assert.match(text, /Target: 22240/);
   assert.match(text, /Risk\/Reward: 3\.0/);
-  assert.match(text, /Confidence: 92%/);
+  assert.match(text, /AI Consensus: 92%/);
   assert.match(text, /Avrrio Score: 95/);
+});
+
+test("formatAlert includes the Trade Grade breakdown when present", () => {
+  const withGrade: Recommendation = {
+    ...rec(),
+    grade: {
+      confidence: 94,
+      grade: "A+",
+      qualityScore: 94,
+      qualifies: true,
+      riskApproved: true,
+      breakdown: {
+        trend: 92,
+        structure: 95,
+        momentum: 92,
+        volume: 87,
+        rewardRisk: 100,
+        volatility: 80,
+        consensus: 100,
+      },
+    },
+  };
+  const text = formatAlert(withGrade);
+  assert.match(text, /Confidence: 94%/);
+  assert.match(text, /Grade: A\+/);
+  assert.match(text, /Structure: 95/);
+  assert.match(text, /Risk: Approved/);
 });
 
 test("telegram enabled only when token + chat id + flag set", () => {

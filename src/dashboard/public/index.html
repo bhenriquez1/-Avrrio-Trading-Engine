@@ -415,6 +415,7 @@
               <div class="tag">Entry ${r.entry} · Stop ${r.stopLoss} · Target ${r.target} · Risk $${r.riskAmount.toFixed(0)} · R:R ${r.rewardRiskRatio.toFixed(2)}</div>
               <div class="tag">Consensus: <b>${r.consensus.recommendation}</b> (${r.consensus.agreement}/${r.consensus.available} agree, ${(r.consensus.confidence*100).toFixed(0)}%) · ${ops}</div>
               <div class="tag">News: ${r.news.blocked ? '<span class="v-block">'+r.news.reason+'</span>' : 'clear'} · Auto-eligible: ${r.autoEligible ? "yes" : "no"}${r.expiresAt ? ' · valid until '+new Date(r.expiresAt).toLocaleTimeString() : ''}</div>
+              ${r.grade ? `<div class="tag">Confidence: <b>${r.grade.confidence}%</b> · Grade: <b>${r.grade.grade}</b> · Trend ${Math.round(r.grade.breakdown.trend)} · Momentum ${Math.round(r.grade.breakdown.momentum)} · Volume ${Math.round(r.grade.breakdown.volume)} · Structure ${Math.round(r.grade.breakdown.structure)} · Risk ${r.grade.riskApproved ? "Approved" : "Blocked"}</div>` : ''}
               ${viol ? '<ul>'+viol+'</ul>' : ''}
               ${r.orderResult ? '<div class="tag">Order: '+r.orderResult.orderId+(r.orderResult.paper?" (paper)":" (LIVE)")+'</div>' : ''}
               ${canAct ? `<div class="actions">

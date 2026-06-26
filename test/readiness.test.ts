@@ -109,6 +109,7 @@ test("approval blocked by position-size lockout returns a block message (no exec
     riskApproved: true,
     violations: [],
     avrrioScore: 90,
+    grade: null,
     consensus: { recommendation: "long", confidence: 0.9, agreement: 2, available: 2, opinions: [] },
     news: { blocked: false, reason: "clear" },
     autoEligible: false,

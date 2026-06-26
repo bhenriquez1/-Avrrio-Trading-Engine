@@ -27,6 +27,7 @@ function recInput(consensusRec: "long" | "short" | "no-trade", agreement: number
     entry: 20000, stopLoss: 19980, target: 20060,
     riskAmount: 40, rewardRiskRatio: 3, riskApproved: true, violations: [],
     avrrioScore: 90,
+    grade: null,
     consensus: { recommendation: consensusRec, confidence: 0.9, agreement, available: 2, opinions: [] },
     news: { blocked: false, reason: "clear" }, autoEligible: false,
     expiresAt: null, approvalMode: null,

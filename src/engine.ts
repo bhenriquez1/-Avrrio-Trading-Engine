@@ -18,6 +18,11 @@ import {
 } from "./ai/tradeChat.js";
 import { buildDebate, type DebateResult } from "./ai/debate.js";
 import { coachReview, type CoachReview } from "./ai/tradeCoach.js";
+import {
+  computeTradeGrade,
+  tradeGradeText,
+  type TradeGradeResult,
+} from "./ai/tradeGrade.js";
 import { TradeMemory, type MemoryAssessment } from "./memory/tradeMemory.js";
 import { NewsReader } from "./news/newsReader.js";
 import { NotificationManager } from "./notifications/notifier.js";
@@ -315,7 +320,19 @@ export class AvrrioEngine {
     };
 
     const assessment = this.risk.assess(input, account, context);
-    const { score: avrrioScore } = scoreSnapshot(snapshot, news.blocked);
+    const { score: avrrioScore, components } = scoreSnapshot(
+      snapshot,
+      news.blocked,
+    );
+    const grade = computeTradeGrade(
+      {
+        components,
+        rewardRiskRatio: assessment.rewardRiskRatio,
+        riskApproved: assessment.approved,
+        consensus: { agreement: consensus.agreement, available: consensus.available },
+      },
+      this.config.ai.qualityThreshold,
+    );
 
     const consensusAgrees =
       consensus.recommendation === input.side &&
@@ -342,6 +359,7 @@ export class AvrrioEngine {
       riskApproved: assessment.approved,
       violations: assessment.violations,
       avrrioScore,
+      grade,
       consensus: {
         recommendation: consensus.recommendation,
         confidence: consensus.confidence,
@@ -374,9 +392,17 @@ export class AvrrioEngine {
       // Semi-autonomous: every gate passed, execute now.
       const result = await this.executor.execute(rec, "system");
       if (result.accepted) void this.autoCoach(rec); // post-trade review
-    } else if (rec.status === "pending") {
-      // Manual/pre-approved: alert the operator so they can approve from a phone.
+    } else if (rec.status === "pending" && grade.qualifies) {
+      // Manual/pre-approved: alert the operator so they can approve from a
+      // phone — but only for setups that clear the Trade Quality Score gate.
+      // Avrrio isn't looking for more trades, it's looking for better trades.
       await this.dispatchAlert(rec);
+    } else if (rec.status === "pending") {
+      await this.audit.log("telegram.alert_suppressed_low_quality", "system", {
+        ref: rec.ref,
+        qualityScore: grade.qualityScore,
+        threshold: this.config.ai.qualityThreshold,
+      });
     }
 
     return rec;
@@ -761,7 +787,7 @@ export class AvrrioEngine {
       "⚙️ SETTINGS",
       `Trading mode: ${this.getTradingMode()} · ${this.isLiveTradingEnabled() ? "LIVE" : "paper"}`,
       `Scanner: ${sched.enabled ? "ON" : "off"} every ${sched.intervalMinutes}m`,
-      `Alert thresholds: Avrrio score ≥ ${this.config.notifications.opportunityAlertScore}, R:R ≥ ${this.config.scheduler.minRewardRisk}, max ${this.config.scheduler.maxAlerts}/cycle`,
+      `Alert thresholds: Avrrio score ≥ ${this.config.notifications.opportunityAlertScore}, R:R ≥ ${this.config.scheduler.minRewardRisk}, Trade Quality Score ≥ ${this.config.ai.qualityThreshold}, max ${this.config.scheduler.maxAlerts}/cycle`,
       `Report hours: ${this.config.scheduler.reportHours.join(", ") || "none"} · timezone: ${this.config.accountTimezone || "server local"}`,
       `AI: ${this.aiHealth().status} (${this.aiHealth().model})`,
       `Data dir: ${this.config.dataDir}${this.config.dataDir === "data" ? " (default — set DATA_DIR to a mounted disk to persist across redeploys)" : ""}`,
