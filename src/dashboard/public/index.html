@@ -343,6 +343,21 @@
         </div>
 
         <div class="card">
+          <h2>📈 Rank every market</h2>
+          <div class="kill" style="margin-bottom: 10px">
+            <button
+              class="btn-ghost"
+              id="rankBtn"
+              style="width: auto; padding: 6px 14px"
+              title="Numbered ranking of every symbol in the universe, best to worst — read-only, never proposes a trade"
+            >
+              Rank every market
+            </button>
+          </div>
+          <div id="rank"></div>
+        </div>
+
+        <div class="card">
           <h2>Propose a trade (AI consensus + risk check, then YOU approve)</h2>
           <div class="row6">
             <div>
@@ -1090,6 +1105,38 @@
             })
             .join("") || '<div class="tag">No results.</div>';
       }
+      async function rankMarkets() {
+        $("rank").innerHTML = '<div class="tag">⏳ Ranking every market…</div>';
+        let rows;
+        try {
+          rows = await api("/api/rank").then(j);
+        } catch (e) {
+          $("rank").innerHTML =
+            `<div class="v-block">Rank failed: ${e.message}</div>`;
+          return;
+        }
+        $("rank").innerHTML =
+          rows
+            .map((r) => {
+              const color = r.qualifies
+                ? "var(--ok)"
+                : r.score >= 60
+                  ? "var(--warn)"
+                  : "var(--muted)";
+              const dir = r.side ? r.side.toUpperCase() : r.direction;
+              const rr =
+                r.rewardRisk != null
+                  ? ` · R:R ${r.rewardRisk.toFixed(2)}:1`
+                  : "";
+              return `<div class="rec">
+            <div><b>${r.rank}. ${r.symbol}</b> <span class="tag">${r.name}</span> <span class="pill" style="border-color:${color};color:${color}">${r.qualifies ? "✅ " : ""}Score ${r.score}/100</span>
+              <span class="tag">${dir}${rr}${r.tradable ? "" : " · watchlist"}</span></div>
+            <div class="tag">${r.reason}</div>
+          </div>`;
+            })
+            .join("") || '<div class="tag">No results.</div>';
+      }
+      $("rankBtn").addEventListener("click", rankMarkets);
       window.useSymbol = (sym, cls) => {
         $("assetClass").value = cls;
         populatePicker();

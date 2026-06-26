@@ -177,6 +177,14 @@ async function start() {
     }),
   );
 
+  // Numbered ranking of EVERY symbol in the universe, best to worst. Read-only
+  // — never proposes a trade.
+  app.get(
+    "/api/rank",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.rankMarkets())),
+  );
+
   // --- workflow (protected) --------------------------------------------
   app.post(
     "/api/propose",
