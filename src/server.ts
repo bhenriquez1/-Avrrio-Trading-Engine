@@ -220,6 +220,25 @@ async function start() {
     }),
   );
 
+  // General conversation about any symbol or "my position(s)" — same path as
+  // /ask in Telegram. Advisory only — never places or approves a trade.
+  app.post(
+    "/api/ask",
+    guard,
+    wrap(async (req, res) => {
+      const question = String(
+        (req.body as { question?: string }).question ?? "",
+      );
+      const answer = question
+        ? await engine.claude.ask(
+            question,
+            await engine.buildConversationContext(question),
+          )
+        : "Add a question.";
+      res.json({ question, answer });
+    }),
+  );
+
   // "What if?" — deterministic R:R recompute (+ optional AI interpretation).
   app.post(
     "/api/recommendations/:id/whatif",
