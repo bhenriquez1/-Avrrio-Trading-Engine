@@ -29,6 +29,13 @@ export interface AvrrioConfig {
     tradegptModel: string;
     /** Minimum confidence (0..1) for a semi-autonomous auto-execution. */
     confidenceThreshold: number;
+    /**
+     * Minimum Trade Quality Score (0..100, weighted Trend/Structure/Momentum/
+     * Volume/Reward-Risk/Volatility/Consensus composite) required before a
+     * setup is even alerted to the operator. "Looking for better trades, not
+     * more trades."
+     */
+    qualityThreshold: number;
   };
   execution: {
     /** Master switch for sending real orders. Default false. */
@@ -188,6 +195,7 @@ export function loadConfig(): AvrrioConfig {
       tradegptBaseUrl: env("TRADEGPT_BASE_URL"),
       tradegptModel: env("TRADEGPT_MODEL", "gpt-4o-mini"),
       confidenceThreshold: num("AVRRIO_CONFIDENCE_THRESHOLD", 0.9),
+      qualityThreshold: num("AVRRIO_QUALITY_THRESHOLD", 90),
     },
     execution: {
       liveTradingEnabled: bool("LIVE_TRADING_ENABLED", false),

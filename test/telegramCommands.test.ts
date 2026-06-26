@@ -27,6 +27,7 @@ function sampleRec(): NewRecommendation {
     riskApproved: true,
     violations: [],
     avrrioScore: 88,
+    grade: null,
     consensus: { recommendation: "long", confidence: 0.5, agreement: 2, available: 3, opinions: [] },
     news: { blocked: false, reason: "" },
     autoEligible: false,

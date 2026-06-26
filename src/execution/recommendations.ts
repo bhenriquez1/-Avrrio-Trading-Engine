@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { ProviderOpinion } from "../ai/consensus.js";
+import type { TradeGradeResult } from "../ai/tradeGrade.js";
 import type { OrderResult, RuleViolation, Side } from "../types.js";
 
 export type RecommendationStatus =
@@ -41,6 +42,8 @@ export interface Recommendation {
   violations: RuleViolation[];
   /** Avrrio Score (0..100) for the symbol at proposal time, or null. */
   avrrioScore: number | null;
+  /** Confidence/Grade/Trade-Quality-Score breakdown at proposal time, or null. */
+  grade: TradeGradeResult | null;
   consensus: {
     recommendation: Side | "no-trade";
     confidence: number;

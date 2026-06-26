@@ -11,7 +11,14 @@ export interface ScoreComponents {
   volume: number; // 0..100, weight 20%
   news: number; // 0..100, weight 20%
   momentum: number; // 0..100, weight 15%
-  risk: number; // 0..100, weight 15%
+  risk: number; // 0..100, weight 15% (controlled volatility — higher is calmer)
+  /**
+   * Market structure quality: how cleanly price is trending vs. chopping
+   * around. Not part of the legacy Avrrio Score weights above — used by the
+   * Trade Grade / Trade Quality Score (src/ai/tradeGrade.ts) instead. Optional
+   * for backwards compatibility with callers that build partial components.
+   */
+  structure?: number; // 0..100
 }
 
 export const SCORE_WEIGHTS = {
@@ -166,7 +173,47 @@ function computeComponents(
   const atrPct = last !== 0 ? mean(ranges) / last : 0;
   const risk = clamp(100 - atrPct * 100 * 20, 0, 100);
 
-  return { trend, volume, news, momentum, risk };
+  const structureScore = computeStructure(snapshot);
+
+  return { trend, volume, news, momentum, risk, structure: structureScore };
+}
+
+/**
+ * Structure: how consistently closes move with the prevailing trend (vs.
+ * chopping back and forth), plus whether price sits on the expected side of
+ * its 20-period average. A clean trend with price confirming above/below the
+ * average scores high; a choppy or unconfirmed move scores low.
+ */
+function computeStructure(snapshot: MarketSnapshot): number {
+  const { bars, structure, quote } = snapshot;
+  const closes = bars.map((b) => b.close);
+  if (closes.length < 2) return 50;
+
+  let aligned = 0;
+  let steps = 0;
+  for (let i = 1; i < closes.length; i++) {
+    const cur = closes[i] ?? 0;
+    const prev = closes[i - 1] ?? 0;
+    const up = cur > prev;
+    const down = cur < prev;
+    if (!up && !down) continue;
+    steps++;
+    if (structure.trend === "up" && up) aligned++;
+    else if (structure.trend === "down" && down) aligned++;
+    else if (structure.trend === "sideways") aligned++; // chop is "expected" here
+  }
+  const consistency = steps ? aligned / steps : 0.5;
+
+  const last = quote.last || closes[closes.length - 1] || 0;
+  const sma = structure.sma || last;
+  const confirmed =
+    structure.trend === "up"
+      ? last >= sma
+      : structure.trend === "down"
+        ? last <= sma
+        : true;
+
+  return clamp(consistency * 80 + (confirmed ? 20 : 0), 0, 100);
 }
 
 function directionOf(snapshot: MarketSnapshot): Direction {
