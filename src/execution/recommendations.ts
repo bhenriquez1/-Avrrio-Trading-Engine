@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { ProviderOpinion } from "../ai/consensus.js";
 import type { TradeGradeResult } from "../ai/tradeGrade.js";
+import type { ManagementAction } from "../ai/tradeManagement.js";
 import type { OrderResult, OrderType, RuleViolation, Side } from "../types.js";
 
 export type RecommendationStatus =
@@ -67,6 +68,10 @@ export interface Recommendation {
   decidedBy?: string;
   decidedAt?: string;
   orderResult?: OrderResult;
+  /** Most recent Live Trade Management action sent for this open position, if any. */
+  lastManagementAction?: ManagementAction;
+  /** Set once an exit/closing review has been sent or the operator marks it closed. */
+  managementClosedAt?: string;
 }
 
 export type NewRecommendation = Omit<
@@ -134,6 +139,13 @@ export class RecommendationStore {
     return this.items.filter((r) => r.status === "armed");
   }
 
+  /** Executed positions still under active management (not yet closed). */
+  openPositions(): Recommendation[] {
+    return this.items.filter(
+      (r) => r.status === "executed" && !r.managementClosedAt,
+    );
+  }
+
   async update(rec: Recommendation): Promise<void> {
     const idx = this.items.findIndex((r) => r.id === rec.id);
     if (idx >= 0) this.items[idx] = rec;
@@ -153,7 +165,9 @@ export class RecommendationStore {
       (r) =>
         r.symbol.toUpperCase() === symbol.toUpperCase() &&
         r.side === side &&
-        (r.status === "pending" || r.status === "approved" || r.status === "executed"),
+        (r.status === "pending" ||
+          r.status === "approved" ||
+          r.status === "executed"),
     );
   }
 

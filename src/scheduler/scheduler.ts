@@ -104,6 +104,7 @@ export class Scheduler {
   private async tick(): Promise<void> {
     try {
       await this.runScanCycle();
+      await this.engine.reviewOpenPositions();
       await this.maybeReports();
       await this.maybeDailySummary();
     } catch (err) {
@@ -126,7 +127,10 @@ export class Scheduler {
       this.reportsSent.add(key);
       const slot = reportSlot(h);
       await this.engine.sendScheduledReport(slot, this.scansToday);
-      await this.engine.audit.log("scheduler.report", "system", { slot, hour: h });
+      await this.engine.audit.log("scheduler.report", "system", {
+        slot,
+        hour: h,
+      });
     }
   }
 
@@ -205,7 +209,11 @@ export class Scheduler {
         refs.push(rec.ref);
         alertedSymbols.add(r.symbol);
         this.lastAlertTime = new Date().toISOString();
-        this.engine.stage("TRADE_APPROVED", { ref: rec.ref, symbol: rec.symbol, side });
+        this.engine.stage("TRADE_APPROVED", {
+          ref: rec.ref,
+          symbol: rec.symbol,
+          side,
+        });
         await this.engine.audit.log("scheduler.alert", "system", {
           ref: rec.ref,
           symbol: rec.symbol,
@@ -215,7 +223,8 @@ export class Scheduler {
         });
       } else {
         // Risk stack blocked it — capture why (e.g. daily-loss, position size).
-        const rule = rec.violations?.map((v) => v.rule).join(", ") || rec.status;
+        const rule =
+          rec.violations?.map((v) => v.rule).join(", ") || rec.status;
         reasons.add(`risk check blocked ${r.symbol} (${rule})`);
         this.engine.stage("TRADE_REJECTED", { symbol: r.symbol, reason: rule });
       }
@@ -226,7 +235,8 @@ export class Scheduler {
     await this.maybeWatchAlerts(today, nearMisses);
 
     const reasonList = [...reasons];
-    if (alerted === 0 && reasonList.length === 0) reasonList.push("no valid setup");
+    if (alerted === 0 && reasonList.length === 0)
+      reasonList.push("no valid setup");
     this.lastSummary = {
       time: this.lastScanTime,
       scanned: results.length,
@@ -282,10 +292,15 @@ export class Scheduler {
     for (const r of pool) {
       if (out.length >= 3) break;
       const side: Side | null =
-        r.direction === "bullish" ? "long" : r.direction === "bearish" ? "short" : null;
+        r.direction === "bullish"
+          ? "long"
+          : r.direction === "bearish"
+            ? "short"
+            : null;
       const reasons: string[] = [];
       if (!r.tradable) reasons.push("watchlist-only (not futures)");
-      if (r.score < this.minScore) reasons.push(`Avrrio score ${r.score} < ${this.minScore}`);
+      if (r.score < this.minScore)
+        reasons.push(`Avrrio score ${r.score} < ${this.minScore}`);
       if (!side) reasons.push("trend/direction not aligned");
       if (r.newsBlocked) reasons.push("news/chop filter");
       let rr: number | null = null;
@@ -293,8 +308,11 @@ export class Scheduler {
         try {
           const snap = await this.engine.snapshot(r.symbol);
           const lv = suggestLevels(snap, side);
-          rr = Math.abs(lv.target - lv.entry) / Math.max(1e-9, Math.abs(lv.entry - lv.stopLoss));
-          if (rr < minRR) reasons.push(`reward/risk ${rr.toFixed(1)} < ${minRR}`);
+          rr =
+            Math.abs(lv.target - lv.entry) /
+            Math.max(1e-9, Math.abs(lv.entry - lv.stopLoss));
+          if (rr < minRR)
+            reasons.push(`reward/risk ${rr.toFixed(1)} < ${minRR}`);
           if (this.engine.recommendations?.hasOpenDuplicate?.(r.symbol, side))
             reasons.push("duplicate open position");
         } catch {
@@ -318,13 +336,17 @@ export class Scheduler {
    * ready (within watchMargin of the score threshold). Once per symbol+side per
    * day, capped. Separate from real trade alerts; never executes anything.
    */
-  private async maybeWatchAlerts(day: string, nearMisses: NearMiss[]): Promise<void> {
+  private async maybeWatchAlerts(
+    day: string,
+    nearMisses: NearMiss[],
+  ): Promise<void> {
     if (!this.config.scheduler.watchAlertsEnabled) return;
     let sent = 0;
     for (const nm of nearMisses) {
       if (sent >= this.config.scheduler.maxAlerts) break;
       if (!nm.tradable || !nm.side) continue;
-      if (nm.score < this.minScore - this.config.scheduler.watchMargin) continue;
+      if (nm.score < this.minScore - this.config.scheduler.watchMargin)
+        continue;
       const key = `${day}:${nm.symbol}:${nm.side}`;
       if (this.watchAlerted.has(key)) continue;
       this.watchAlerted.add(key);
