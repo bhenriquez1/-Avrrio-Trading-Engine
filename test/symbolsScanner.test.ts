@@ -45,7 +45,7 @@ test("symbol lookup is case-insensitive", () => {
 
 test("registry has the expected classes", () => {
   assert.equal(listByClass("stocks").length, 8);
-  assert.equal(listByClass("crypto").length, 6);
+  assert.equal(listByClass("crypto").length, 10);
   assert.ok(tradableSymbols().every((s) => s.assetClass === "futures" || s.assetClass === "crypto"));
 });
 

@@ -381,27 +381,39 @@ export const CRYPTO_PRODUCT_IDS = [
   "BTC-USD",
   "ETH-USD",
   "SOL-USD",
-  "AVAX-USD",
-  "LINK-USD",
+  "XRP-USD",
+  "BNB-USD",
   "DOGE-USD",
+  "LINK-USD",
+  "AVAX-USD",
+  "SUI-USD",
+  "LTC-USD",
 ];
 
 export const DEMO_PRICES: Record<string, number> = {
   "BTC-USD": 107250,
   "ETH-USD": 3840,
   "SOL-USD": 178,
-  "AVAX-USD": 38,
-  "LINK-USD": 19.5,
+  "XRP-USD": 2.5,
+  "BNB-USD": 650,
   "DOGE-USD": 0.185,
+  "LINK-USD": 19.5,
+  "AVAX-USD": 38,
+  "SUI-USD": 3.5,
+  "LTC-USD": 85,
 };
 
 const DEMO_24H_CHANGE: Record<string, number> = {
   "BTC-USD": 2.4,
   "ETH-USD": 1.8,
   "SOL-USD": -0.9,
-  "AVAX-USD": 3.1,
-  "LINK-USD": -1.4,
+  "XRP-USD": 1.2,
+  "BNB-USD": 0.8,
   "DOGE-USD": 0.6,
+  "LINK-USD": -1.4,
+  "AVAX-USD": 3.1,
+  "SUI-USD": 4.2,
+  "LTC-USD": -0.5,
 };
 
 function demoCryptoQuote(productId: string): Quote {

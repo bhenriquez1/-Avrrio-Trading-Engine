@@ -277,7 +277,7 @@ export function loadConfig(): AvrrioConfig {
         cooldownMinutes: num("COINBASE_COOLDOWN_MINUTES", 30),
         minRewardRisk: num("COINBASE_MIN_REWARD_RISK", 2),
         emergencyStop: bool("COINBASE_EMERGENCY_STOP", false),
-        allowedProducts: env("COINBASE_ALLOWED_PRODUCTS", "BTC-USD,ETH-USD")
+        allowedProducts: env("COINBASE_ALLOWED_PRODUCTS", "BTC-USD,ETH-USD,SOL-USD,XRP-USD,BNB-USD,DOGE-USD,LINK-USD,AVAX-USD,SUI-USD,LTC-USD")
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
