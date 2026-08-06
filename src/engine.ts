@@ -60,6 +60,7 @@ import {
 } from "./ai/conversationContext.js";
 import { TradeJournal } from "./journal/tradeJournal.js";
 import { TopstepClient } from "./topstep/client.js";
+import { CoinbaseClient, type CoinbasePortfolio } from "./coinbase/client.js";
 import { sendSms, samePhone, smsMissing } from "./sms/smsClient.js";
 import { parseSmsCommand, type SmsCommand } from "./sms/inbound.js";
 import { formatOpportunitySms, formatSignalSms } from "./sms/messages.js";
@@ -143,6 +144,7 @@ export class AvrrioEngine {
   readonly scheduler: Scheduler;
   readonly auth: Auth;
   readonly memory: TradeMemory;
+  readonly coinbase: CoinbaseClient;
   // Validation flags (Telegram/Emergency Stop/paper approval) are persisted in
   // RuntimeSettings so they survive restarts; auth/token/account below stay
   // live-checked so a broken connection always reflects reality.
@@ -187,6 +189,7 @@ export class AvrrioEngine {
     this.auth = new Auth(config);
     this.scheduler = new Scheduler(this, config, this.settings);
     this.memory = new TradeMemory(dataPath("memory.json"));
+    this.coinbase = new CoinbaseClient(config);
   }
 
   async init(): Promise<void> {
@@ -1685,6 +1688,52 @@ export class AvrrioEngine {
 
   disengageKill(actor: string) {
     return this.killSwitch.disengage(actor);
+  }
+
+  // --- Coinbase ─────────────────────────────────────────────────────────
+  async coinbaseStatus(): Promise<{
+    credentialsConfigured: boolean;
+    authOk: boolean;
+    offline: boolean;
+    tradingEnabled: boolean;
+    killSwitch: boolean;
+    portfolio: CoinbasePortfolio | null;
+    safety: {
+      maxPositionUsd: number;
+      maxRiskPerTradeUsd: number;
+      maxDailyLossUsd: number;
+    };
+  }> {
+    const credentialsConfigured =
+      !!this.config.coinbase.apiKeyName && !!this.config.coinbase.apiKeySecret;
+    let authOk = false;
+    let portfolio: CoinbasePortfolio | null = null;
+    if (credentialsConfigured && !this.coinbase.isOffline) {
+      const test = await this.coinbase.authTest();
+      authOk = test.ok;
+    }
+    try {
+      portfolio = await this.coinbase.getPortfolio();
+    } catch {
+      portfolio = null;
+    }
+    return {
+      credentialsConfigured,
+      authOk,
+      offline: this.coinbase.isOffline,
+      tradingEnabled: this.coinbase.tradingEnabled,
+      killSwitch: !!this.killSwitch.status(),
+      portfolio,
+      safety: {
+        maxPositionUsd: this.config.coinbase.safety.maxPositionUsd,
+        maxRiskPerTradeUsd: this.config.coinbase.safety.maxRiskPerTradeUsd,
+        maxDailyLossUsd: this.config.coinbase.safety.maxDailyLossUsd,
+      },
+    };
+  }
+
+  async coinbaseAuthTest() {
+    return this.coinbase.authTest();
   }
 
   // --- TopstepX connection ----------------------------------------------
