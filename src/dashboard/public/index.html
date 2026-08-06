@@ -646,6 +646,10 @@
           <button class="acct-btn" id="acct-coinbase">Coinbase Advanced</button>
         </div>
         <div class="hdr-stat">
+          <div class="hdr-label">Venue</div>
+          <div class="hdr-value" id="venue-status" style="font-size:11px;color:var(--muted)">—</div>
+        </div>
+        <div class="hdr-stat">
           <div class="hdr-label">Balance</div>
           <div class="hdr-value" id="hdr-balance">$50,000</div>
         </div>
@@ -966,11 +970,54 @@
     document.getElementById('acct-topstep').addEventListener('click', () => switchAccount('topstep'));
     document.getElementById('acct-coinbase').addEventListener('click', () => switchAccount('coinbase'));
 
+    // Returns only the scan results relevant to the active venue.
+    function venueFilter(data) {
+      if (activeAccount === 'topstep') return data.filter(r => r.assetClass === 'futures');
+      if (activeAccount === 'coinbase') return data.filter(r => r.assetClass === 'crypto');
+      return data;
+    }
+
+    function updateVenueStatus() {
+      const el = document.getElementById('venue-status');
+      if (!el) return;
+      if (activeAccount === 'coinbase') {
+        const cb = statusData.coinbase;
+        if (!cb) { el.textContent = 'Coinbase —'; el.style.color = 'var(--muted)'; return; }
+        if (cb.tradingEnabled) {
+          el.textContent = 'CB · LIVE'; el.style.color = 'var(--red)';
+        } else if (cb.offline) {
+          el.textContent = 'CB · Demo'; el.style.color = 'var(--muted)';
+        } else {
+          el.textContent = 'CB · Read-only'; el.style.color = 'var(--gold)';
+        }
+      } else {
+        const ts = statusData.topstepx;
+        if (!ts) { el.textContent = 'TS —'; el.style.color = 'var(--muted)'; return; }
+        if (ts.connected && statusData.liveTrading) {
+          el.textContent = 'TS · LIVE'; el.style.color = 'var(--red)';
+        } else if (ts.connected) {
+          el.textContent = 'TS · Paper'; el.style.color = 'var(--gold)';
+        } else {
+          el.textContent = 'TS · Disconnected'; el.style.color = 'var(--muted)';
+        }
+      }
+    }
+
     function switchAccount(acct) {
       activeAccount = acct;
       document.getElementById('acct-topstep').classList.toggle('active', acct === 'topstep');
       document.getElementById('acct-coinbase').classList.toggle('active', acct === 'coinbase');
       refreshAccountHeader();
+      updateVenueStatus();
+      // Switch chart to a symbol valid for this venue
+      const venueData = venueFilter(scanData);
+      const defaultSym = acct === 'coinbase' ? 'BTCUSD' : 'NQ';
+      if (!venueData.find(r => r.symbol === chartSymbol)) {
+        selectSymbol(defaultSym);
+      }
+      renderTop5();
+      renderHeatmap();
+      loadPositions();
     }
 
     function refreshAccountHeader() {
@@ -1026,9 +1073,11 @@
       btn.style.display = 'none';
       spinner.style.display = 'inline';
       document.getElementById('scan-spinner').style.display = '';
-      document.getElementById('scan-spinner').textContent = 'Scanning all markets…';
+      const venueLabel = activeAccount === 'coinbase' ? 'crypto markets' : 'futures markets';
+      document.getElementById('scan-spinner').textContent = `Scanning ${venueLabel}…`;
 
-      api('/api/scan')
+      const classes = activeAccount === 'coinbase' ? 'crypto' : 'futures';
+      api(`/api/scan?classes=${classes}`)
         .then(d => {
           scanData = d.results || [];
           renderTop5();
@@ -1048,8 +1097,9 @@
     // ── TOP 5 ─────────────────────────────────────────────
     function renderTop5() {
       const el = document.getElementById('top5-list');
-      if (!scanData.length) { el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">No results</div>'; return; }
-      const top = scanData.slice(0, 5);
+      const filtered = venueFilter(scanData);
+      if (!filtered.length) { el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">No results — click ⚡ Scan Now</div>'; return; }
+      const top = filtered.slice(0, 5);
       el.innerHTML = top.map((r, i) => {
         const broker = r.broker || (r.assetClass === 'crypto' ? 'coinbase' : 'topstep');
         const dirClass = r.direction === 'bullish' ? 'bull' : r.direction === 'bearish' ? 'bear' : '';
@@ -1068,8 +1118,9 @@
     // ── HEATMAP ───────────────────────────────────────────
     function renderHeatmap() {
       const el = document.getElementById('heatmap-grid');
-      if (!scanData.length) { el.innerHTML = ''; return; }
-      const cells = scanData.slice(0, 18);
+      const filtered = venueFilter(scanData);
+      if (!filtered.length) { el.innerHTML = ''; return; }
+      const cells = filtered.slice(0, 18);
       el.innerHTML = cells.map(r => {
         const score = r.score;
         const hue = score >= 70 ? '#00ff88' : score >= 50 ? '#f59e0b' : '#ef4444';
@@ -1103,7 +1154,8 @@
       const spinner = document.getElementById('scan-spinner');
       if (!scanData.length) { spinner.style.display=''; spinner.textContent='No scan data yet — click ⚡ Scan Now'; return; }
       spinner.style.display = 'none';
-      let rows = scanData;
+      // Start with venue-filtered data; scanner filter can narrow further
+      let rows = venueFilter(scanData);
       if (scanFilter !== 'all') rows = rows.filter(r => r.assetClass === scanFilter);
       const body = document.getElementById('scanner-body');
       body.innerHTML = rows.map((r, i) => {
@@ -1449,7 +1501,10 @@
       chatInput.value = '';
       appendMsg('user', text);
       chatThinking.style.display = '';
-      api('/api/chat', { method: 'POST', body: JSON.stringify({ message: text }) })
+      // Prepend active venue so the AI knows which market to reference
+      const venue = activeAccount === 'coinbase' ? 'Coinbase crypto (BTC-USD, ETH-USD, SOL-USD, AVAX-USD, LINK-USD, DOGE-USD)' : 'TopstepX futures (NQ, ES, GC, CL, etc.)';
+      const message = `[Active venue: ${venue}]\n${text}`;
+      api('/api/chat', { method: 'POST', body: JSON.stringify({ message }) })
         .then(d => appendMsg('ai', d.reply || d.message || 'No response'))
         .catch(e => { if (e.message !== 'Session expired') appendMsg('ai', 'Error: ' + e.message); })
         .finally(() => { chatThinking.style.display = 'none'; });
@@ -1470,16 +1525,25 @@
     // ── POSITIONS ─────────────────────────────────────────
     function loadPositions() {
       api('/api/positions').then(d => {
-        const pos = d.positions || [];
+        let pos = d.positions || [];
+        // Filter positions to match active venue
+        if (activeAccount === 'topstep') pos = pos.filter(p => p.broker !== 'coinbase');
+        else if (activeAccount === 'coinbase') pos = pos.filter(p => p.broker === 'coinbase');
         const el = document.getElementById('positions-list');
-        if (!pos.length) { el.innerHTML = '<div id="no-positions">No open positions</div>'; return; }
+        if (!pos.length) {
+          const venueName = activeAccount === 'coinbase' ? 'crypto' : 'futures';
+          el.innerHTML = `<div id="no-positions">No open ${venueName} positions</div>`;
+          return;
+        }
         el.innerHTML = pos.map(p => {
           const side = p.side?.toLowerCase() === 'buy' || p.size > 0 ? 'long' : 'short';
           const pnl = p.unrealizedPnl ?? p.pnl ?? 0;
+          const isCrypto = p.broker === 'coinbase' || p.assetClass === 'crypto';
+          const qtyLabel = isCrypto ? p.quantity?.toFixed(6) ?? Math.abs(p.size ?? 0) : `${Math.abs(p.size ?? 1)} ct`;
           return `<div class="pos-row">
             <span class="pos-side ${side}">${side}</span>
             <span class="pos-sym">${p.symbol}</span>
-            <span class="pos-qty">${Math.abs(p.size ?? 1)} ct</span>
+            <span class="pos-qty">${qtyLabel}</span>
             <span class="pos-pnl ${pnl >= 0 ? 'pos' : 'neg'}">${pnl >= 0 ? '+' : ''}${fmt$(pnl)}</span>
             <button class="pos-close" onclick="closePosition('${p.symbol}')">✕</button>
           </div>`;
@@ -1520,10 +1584,13 @@
           document.getElementById('hdr-risk').textContent = fmt$(maxLoss - loss);
         }
 
-        // AI status badges
+        // AI status badges — ai.enabled = Claude; ai.providers includes 'openai' if key set
         const ai = d.ai || {};
-        setBadge('ai-claude', ai.claudeEnabled ? 'ok' : 'off', ai.claudeEnabled ? 'ONLINE' : 'OFF');
-        setBadge('ai-openai', ai.openaiEnabled ? 'ok' : 'off', ai.openaiEnabled ? 'ONLINE' : 'OFF');
+        const claudeOk = ai.enabled || ai.status === 'online';
+        const openaiOk = (ai.providers || []).includes('openai');
+        setBadge('ai-claude', claudeOk ? 'ok' : 'off', claudeOk ? 'ONLINE' : 'OFF');
+        setBadge('ai-openai', openaiOk ? 'ok' : 'off', openaiOk ? 'ONLINE' : 'OFF');
+        updateVenueStatus();
         setBadge('ai-live', d.execution?.liveTradingEnabled ? 'warn' : 'off',
           d.execution?.liveTradingEnabled ? 'LIVE' : 'PAPER');
         setBadge('ai-kill', d.safety?.killSwitch ? 'warn' : 'ok',
@@ -1558,7 +1625,10 @@
     function initDashboard() {
       loadStatus();
       loadPositions();
-      loadChartData('NQ');
+      const defaultChart = activeAccount === 'coinbase' ? 'BTCUSD' : 'NQ';
+      chartSymbol = defaultChart;
+      document.getElementById('chart-symbol').textContent = defaultChart;
+      loadChartData(defaultChart);
       drawPerf();
       setInterval(loadStatus, 30000);
       setInterval(loadPositions, 15000);
