@@ -13,6 +13,18 @@ export interface CoinbaseSafety {
   maxPositionUsd: number;
   maxRiskPerTradeUsd: number;
   maxOpenPositions: number;
+  /** Whether the autonomy engine may auto-execute crypto trades. Default false. */
+  autonomousEnabled: boolean;
+  /** Max auto-trades per calendar day across all crypto symbols. */
+  maxTradesPerDay: number;
+  /** Minutes to wait between consecutive auto-trades (prevents overtrading). */
+  cooldownMinutes: number;
+  /** Minimum reward/risk ratio required before automation executes a trade. */
+  minRewardRisk: number;
+  /** Coinbase-specific emergency stop. Does not affect TopstepX. */
+  emergencyStop: boolean;
+  /** Coinbase product IDs the autonomy engine is permitted to trade. Empty = all registered. */
+  allowedProducts: string[];
 }
 
 export interface AvrrioConfig {
@@ -260,6 +272,15 @@ export function loadConfig(): AvrrioConfig {
         maxPositionUsd: num("COINBASE_MAX_POSITION_USD", 500),
         maxRiskPerTradeUsd: num("COINBASE_MAX_RISK_PER_TRADE", 50),
         maxOpenPositions: num("COINBASE_MAX_OPEN_POSITIONS", 3),
+        autonomousEnabled: bool("COINBASE_AUTONOMOUS_ENABLED", false),
+        maxTradesPerDay: num("COINBASE_MAX_TRADES_PER_DAY", 2),
+        cooldownMinutes: num("COINBASE_COOLDOWN_MINUTES", 30),
+        minRewardRisk: num("COINBASE_MIN_REWARD_RISK", 2),
+        emergencyStop: bool("COINBASE_EMERGENCY_STOP", false),
+        allowedProducts: env("COINBASE_ALLOWED_PRODUCTS", "BTC-USD,ETH-USD")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
       },
     },
     // DATA_DIR (canonical) or AVRRIO_DATA_DIR; trim trailing slash for clean joins.

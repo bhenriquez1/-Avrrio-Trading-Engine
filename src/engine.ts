@@ -61,6 +61,7 @@ import {
 import { TradeJournal } from "./journal/tradeJournal.js";
 import { TopstepClient } from "./topstep/client.js";
 import { CoinbaseClient, type CoinbasePortfolio } from "./coinbase/client.js";
+import { CoinbaseAutonomyEngine } from "./coinbase/autonomy.js";
 import { sendSms, samePhone, smsMissing } from "./sms/smsClient.js";
 import { parseSmsCommand, type SmsCommand } from "./sms/inbound.js";
 import { formatOpportunitySms, formatSignalSms } from "./sms/messages.js";
@@ -145,6 +146,7 @@ export class AvrrioEngine {
   readonly auth: Auth;
   readonly memory: TradeMemory;
   readonly coinbase: CoinbaseClient;
+  readonly coinbaseAutonomy: CoinbaseAutonomyEngine;
   // Validation flags (Telegram/Emergency Stop/paper approval) are persisted in
   // RuntimeSettings so they survive restarts; auth/token/account below stay
   // live-checked so a broken connection always reflects reality.
@@ -190,6 +192,7 @@ export class AvrrioEngine {
     this.scheduler = new Scheduler(this, config, this.settings);
     this.memory = new TradeMemory(dataPath("memory.json"));
     this.coinbase = new CoinbaseClient(config);
+    this.coinbaseAutonomy = new CoinbaseAutonomyEngine(this);
   }
 
   async init(): Promise<void> {
@@ -671,6 +674,34 @@ export class AvrrioEngine {
       case "/topfutures":
         reply = await this.cmdTopByClass("futures");
         break;
+      case "/coinbase_status":
+      case "/cb_status":
+        reply = this.coinbaseAutonomy.statusText();
+        break;
+      case "/coinbase_positions":
+      case "/cb_positions":
+        reply = this.coinbaseAutonomy.positionsText();
+        break;
+      case "/coinbase_why":
+      case "/cb_why":
+        reply = this.coinbaseAutonomy.whyText();
+        break;
+      case "/coinbase_readiness":
+      case "/cb_readiness":
+        reply = await this.coinbaseAutonomy.readinessTextCmd();
+        break;
+      case "/coinbase_pause":
+      case "/cb_pause":
+        reply = await this.cmdCoinbasePause();
+        break;
+      case "/coinbase_resume":
+      case "/cb_resume":
+        reply = await this.cmdCoinbaseResume(arg);
+        break;
+      case "/coinbase_stop":
+      case "/cb_stop":
+        reply = await this.cmdCoinbaseStop();
+        break;
       case "/approve":
         reply = arg
           ? await this.approvalAction("approve", arg)
@@ -929,6 +960,35 @@ export class AvrrioEngine {
       lines.push(`${r.rank}. ${r.symbol} ${r.score}/100 ${dir}${rr}${flag}`);
     }
     return lines.join("\n");
+  }
+
+  private async cmdCoinbasePause(): Promise<string> {
+    this.coinbaseAutonomy.pause();
+    await this.audit.log("coinbase.autonomy.paused", "telegram", {});
+    return "⏸️ Coinbase automation paused. No new auto-trades until /coinbase_resume.";
+  }
+
+  private async cmdCoinbaseResume(arg: string): Promise<string> {
+    this.coinbaseAutonomy.resume();
+    const lines = ["▶️ Coinbase automation resumed."];
+    if (this.coinbaseAutonomy.hasEmergencyStop) {
+      if (arg.toLowerCase() === "confirm") {
+        this.coinbaseAutonomy.clearEmergencyStop();
+        await this.audit.log("coinbase.autonomy.emergency_stop_cleared", "telegram", {});
+        lines.push("✅ Coinbase emergency stop cleared.");
+      } else {
+        lines.push("⚠️ Coinbase emergency stop is still engaged — reply '/coinbase_resume confirm' to clear it.");
+      }
+    }
+    await this.audit.log("coinbase.autonomy.resumed", "telegram", {});
+    return lines.join("\n");
+  }
+
+  private async cmdCoinbaseStop(): Promise<string> {
+    this.coinbaseAutonomy.engageEmergencyStop();
+    this.coinbaseAutonomy.pause();
+    await this.audit.log("coinbase.autonomy.emergency_stop_engaged", "telegram", {});
+    return "🛑 Coinbase emergency stop ENGAGED. All crypto automation blocked. TopstepX is unaffected.\nReply /coinbase_resume confirm to clear.";
   }
 
   private async cmdStatus(): Promise<string> {
@@ -2531,8 +2591,16 @@ const TELEGRAM_HELP = [
   "/coach <T-ref> — post-trade review vs discipline rules",
   "/memory [T-ref] — win rates by setup/side/time, or check one trade vs history",
   "/approve <id> · /reject <id> — act on a pending trade (full risk checks)",
-  "/pause · /resume — pause/resume the scanner",
+  "/pause · /resume — pause/resume the TopstepX scanner",
   "/stop — Emergency Stop · /resume confirm — clear it",
+  "",
+  "Coinbase automation (separate from TopstepX):",
+  "/coinbase_status — automation status, limits, last scan",
+  "/coinbase_positions — open Coinbase positions",
+  "/coinbase_why — why no auto-trade last cycle",
+  "/coinbase_readiness — 12-step readiness checklist",
+  "/coinbase_pause · /coinbase_resume — pause/resume automation",
+  "/coinbase_stop — Coinbase-only emergency stop",
 ].join("\n");
 
 /** Hour (0-23) of an ISO timestamp in the given IANA timezone (server local if empty). */
