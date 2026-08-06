@@ -660,6 +660,17 @@ export class AvrrioEngine {
       case "/history":
         reply = this.cmdMemory(arg);
         break;
+      case "/positions":
+        reply = this.cmdPositions();
+        break;
+      case "/top_crypto":
+      case "/topcrypto":
+        reply = await this.cmdTopByClass("crypto");
+        break;
+      case "/top_futures":
+      case "/topfutures":
+        reply = await this.cmdTopByClass("futures");
+        break;
       case "/approve":
         reply = arg
           ? await this.approvalAction("approve", arg)
@@ -882,6 +893,42 @@ export class AvrrioEngine {
       return `🔍 Scan complete — ${r.alerted} alert(s) sent: ${r.refs.join(", ")}. Approve from the alert buttons or /approve <id>.`;
     }
     return `🔍 Scan complete — no qualifying setup.\n\n${await this.scanExplanation()}`;
+  }
+
+  /** /positions — open positions tracked in the recommendations queue. */
+  private cmdPositions(): string {
+    const open = this.recommendations.openPositions();
+    if (!open.length) return "📭 No open positions.";
+    const lines = ["📋 OPEN POSITIONS"];
+    for (const r of open) {
+      lines.push(
+        `${r.symbol} ${r.side.toUpperCase()} @${r.entry} · stop ${r.stopLoss} · target ${r.target} [${r.ref}]`,
+      );
+    }
+    return lines.join("\n");
+  }
+
+  /** /top_crypto or /top_futures — top 5 symbols by Avrrio Score for an asset class. */
+  private async cmdTopByClass(
+    assetClass: "crypto" | "futures",
+  ): Promise<string> {
+    const ranks = await this.rankMarkets();
+    const label = assetClass === "crypto" ? "CRYPTO" : "FUTURES";
+    const top = ranks
+      .filter((r) => {
+        const info = findSymbol(r.symbol);
+        return info?.assetClass === assetClass;
+      })
+      .slice(0, 5);
+    if (!top.length) return `No ${label.toLowerCase()} markets ranked yet — run /scan first.`;
+    const lines = [`📊 TOP ${label} — Avrrio Score`];
+    for (const r of top) {
+      const dir = r.side === "long" ? "LONG" : r.side === "short" ? "SHORT" : r.direction;
+      const rr = r.rewardRisk != null ? ` · R:R ${r.rewardRisk.toFixed(1)}` : "";
+      const flag = r.qualifies ? " ✅" : "";
+      lines.push(`${r.rank}. ${r.symbol} ${r.score}/100 ${dir}${rr}${flag}`);
+    }
+    return lines.join("\n");
   }
 
   private async cmdStatus(): Promise<string> {
@@ -2465,21 +2512,24 @@ export class AvrrioEngine {
 
 const TELEGRAM_HELP = [
   "🤖 Avrrio Trade AI — commands",
-  "/scan (or /scan now) — run a scan now; alerts if a setup qualifies, else explains why",
-  "/rank — numbered ranked list of every symbol in the universe, best to worst",
+  "/scan (or /scan_now) — run a scan now; alerts if a setup qualifies, else explains why",
+  "/top_futures — top 5 futures by Avrrio Score",
+  "/top_crypto — top 5 crypto by Avrrio Score",
+  "/rank — full ranked list of every symbol, best to worst",
+  "/positions — open positions in the queue",
   "/why — why nothing qualified in the latest scan",
-  '/why <SYMBOL> — full breakdown for one symbol (e.g. "/why MNQ"), even if it wasn\'t a near-miss',
-  "/status — mode, account, P&L, positions, kill switch, scheduler, AI",
-  "/diag — full pipeline diagnostics (scheduler, Telegram, AI, TopstepX)",
-  "/last_signal — the most recent recommendation + last scan summary",
+  '/why <SYMBOL> — full breakdown for one symbol (e.g. "/why MNQ")',
+  "/status — mode, account, P&L, kill switch, scheduler, AI",
+  "/diag — full pipeline diagnostics",
+  "/last_signal — the most recent recommendation",
   "/risk — risk limits and current usage",
-  "/settings — current mode, scanner cadence, thresholds, timezone",
-  '/ask <question> (or just type) — ask the AI; advisory only, cannot trade. Mention a symbol (e.g. "what about NQ?") or "my position" and the answer is grounded in that live data.',
-  "/discuss <T-ref> <question> — per-trade chat (e.g. why not buy now?)",
-  "/whatif <T-ref> <scenario> — recompute R:R (e.g. move stop to 20010, one contract)",
+  "/settings — current mode, thresholds, timezone",
+  '/ask <question> (or just type) — ask the AI; advisory only, cannot trade.',
+  "/discuss <T-ref> <question> — per-trade chat",
+  "/whatif <T-ref> <scenario> — recompute R:R",
   "/debate <T-ref|symbol> — Bull case vs Bear case + final verdict",
-  "/coach <T-ref> — post-trade review vs your discipline rules (auto-sent after each trade)",
-  "/memory [T-ref] — your win rates by setup/side/time, or check one trade vs history",
+  "/coach <T-ref> — post-trade review vs discipline rules",
+  "/memory [T-ref] — win rates by setup/side/time, or check one trade vs history",
   "/approve <id> · /reject <id> — act on a pending trade (full risk checks)",
   "/pause · /resume — pause/resume the scanner",
   "/stop — Emergency Stop · /resume confirm — clear it",
