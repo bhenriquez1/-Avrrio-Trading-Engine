@@ -71,6 +71,11 @@ export const SYMBOLS: SymbolInfo[] = [
   futures("MCL", "Micro Crude Oil"),
   futures("GC", "Gold"),
   futures("MGC", "Micro Gold"),
+  futures("PL", "Platinum"),
+  futures("HG", "Copper"),
+  futures("ZC", "Corn"),
+  futures("ZW", "Wheat"),
+  futures("ZS", "Soybeans"),
   // --- Stocks (watchlist / analysis only) ---
   watchlist("AAPL", "Apple", "stocks"),
   watchlist("TSLA", "Tesla", "stocks"),
