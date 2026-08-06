@@ -89,9 +89,13 @@ export const SYMBOLS: SymbolInfo[] = [
   crypto("BTCUSD", "Bitcoin", "BTC-USD", 1),
   crypto("ETHUSD", "Ethereum", "ETH-USD", 0.01),
   crypto("SOLUSD", "Solana", "SOL-USD", 0.01),
-  crypto("AVAXUSD", "Avalanche", "AVAX-USD", 0.001),
-  crypto("LINKUSD", "Chainlink", "LINK-USD", 0.001),
+  crypto("XRPUSD", "XRP", "XRP-USD", 0.0001),
+  crypto("BNBUSD", "BNB", "BNB-USD", 0.01),
   crypto("DOGEUSD", "Dogecoin", "DOGE-USD", 0.00001),
+  crypto("LINKUSD", "Chainlink", "LINK-USD", 0.001),
+  crypto("AVAXUSD", "Avalanche", "AVAX-USD", 0.001),
+  crypto("SUIUSD", "Sui", "SUI-USD", 0.001),
+  crypto("LTCUSD", "Litecoin", "LTC-USD", 0.01),
 ];
 
 /** Normalizes a symbol (strips contract month suffixes, uppercases). */
