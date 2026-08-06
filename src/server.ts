@@ -295,6 +295,66 @@ async function start() {
     }),
   );
 
+  // --- Coinbase Autonomy ------------------------------------------------
+  app.get(
+    "/api/coinbase/autonomy",
+    guard,
+    wrap(async (_req, res) => res.json(engine.coinbaseAutonomy.status())),
+  );
+
+  app.get(
+    "/api/coinbase/autonomy/readiness",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.coinbaseAutonomy.readiness())),
+  );
+
+  app.get(
+    "/api/coinbase/autonomy/positions",
+    guard,
+    wrap(async (_req, res) => {
+      res.json({ positions: engine.coinbaseAutonomy.openPositionsList() });
+    }),
+  );
+
+  app.post(
+    "/api/coinbase/autonomy/pause",
+    guard,
+    wrap(async (_req, res) => {
+      engine.coinbaseAutonomy.pause();
+      await engine.audit.log("coinbase.autonomy.paused", "operator", {});
+      res.json({ ok: true, paused: true });
+    }),
+  );
+
+  app.post(
+    "/api/coinbase/autonomy/resume",
+    guard,
+    wrap(async (req, res) => {
+      engine.coinbaseAutonomy.resume();
+      const { clearEmergencyStop } = req.body as { clearEmergencyStop?: boolean };
+      if (clearEmergencyStop) engine.coinbaseAutonomy.clearEmergencyStop();
+      await engine.audit.log("coinbase.autonomy.resumed", "operator", {
+        clearEmergencyStop: !!clearEmergencyStop,
+      });
+      res.json({
+        ok: true,
+        paused: false,
+        emergencyStop: engine.coinbaseAutonomy.hasEmergencyStop,
+      });
+    }),
+  );
+
+  app.post(
+    "/api/coinbase/autonomy/emergency-stop",
+    guard,
+    wrap(async (_req, res) => {
+      engine.coinbaseAutonomy.engageEmergencyStop();
+      engine.coinbaseAutonomy.pause();
+      await engine.audit.log("coinbase.autonomy.emergency_stop_engaged", "operator", {});
+      res.json({ ok: true, emergencyStop: true });
+    }),
+  );
+
   // --- workflow (protected) --------------------------------------------
   app.post(
     "/api/propose",

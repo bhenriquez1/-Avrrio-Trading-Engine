@@ -105,6 +105,8 @@ export class Scheduler {
     try {
       await this.runScanCycle();
       await this.engine.reviewOpenPositions();
+      // Coinbase autonomy runs in the same cycle — fully isolated from TopstepX
+      await this.engine.coinbaseAutonomy.runCycle();
       await this.maybeReports();
       await this.maybeDailySummary();
     } catch (err) {
