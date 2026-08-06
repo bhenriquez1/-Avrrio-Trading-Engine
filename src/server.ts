@@ -525,8 +525,51 @@ async function start() {
     ),
   );
 
-  // AI assistant health (read-only): status, model, last success, last error.
-  app.get("/api/ai-health", (_req, res) => res.json(engine.aiHealth()));
+  // AI assistant health (read-only): Claude + OpenAI status. Never exposes keys.
+  app.get("/api/ai-health", (_req, res) => {
+    const claude = engine.aiHealth();
+    const openaiConfigured = engine.config.ai.openaiApiKey.length > 0;
+    const tradegptConfigured = engine.config.ai.tradegptApiKey.length > 0;
+    res.json({
+      anthropic: {
+        configured: claude.enabled,
+        enabled: claude.enabled,
+        healthy: claude.status === "online",
+        model: claude.model,
+        lastSuccessAt: claude.lastSuccessAt,
+        lastError: claude.lastError,
+      },
+      openai: {
+        configured: openaiConfigured,
+        enabled: openaiConfigured,
+        healthy: openaiConfigured,
+        model: engine.config.ai.openaiModel,
+      },
+      tradegpt: {
+        configured: tradegptConfigured,
+        enabled: tradegptConfigured,
+        model: engine.config.ai.tradegptModel,
+      },
+      providers: engine.consensus.availableProviders(),
+    });
+  });
+
+  // AI chat assistant (guarded). Advisory only — never places orders.
+  // The frontend sends POST /api/chat with { message } and expects { reply }.
+  app.post(
+    "/api/chat",
+    guard,
+    wrap(async (req, res) => {
+      const { message } = req.body as { message?: string };
+      if (!message || typeof message !== "string" || !message.trim()) {
+        res.status(400).json({ error: "message is required" });
+        return;
+      }
+      const context = await engine.buildConversationContext(message);
+      const reply = await engine.claude.ask(message.trim(), context);
+      res.json({ reply });
+    }),
+  );
 
   // Full pipeline diagnostics (read-only): scheduler/telegram/AI/topstepx/last scan.
   app.get("/api/diagnostics", (_req, res) =>

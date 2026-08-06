@@ -942,6 +942,10 @@
             loginOverlay.classList.remove('hidden');
             throw new Error('Session expired');
           }
+          const ct = r.headers.get('content-type') || '';
+          if (!ct.includes('application/json')) {
+            throw new Error(`Server returned ${r.status} non-JSON response for ${path} — check server logs`);
+          }
           return r.json();
         });
     }
