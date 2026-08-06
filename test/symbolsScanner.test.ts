@@ -27,11 +27,11 @@ function snapshotWithCloses(closes: number[], trend: "up" | "down" | "sideways")
   };
 }
 
-test("futures are tradable, stocks and crypto are watchlist-only", () => {
+test("futures and crypto are tradable; stocks are watchlist-only", () => {
   assert.equal(isTradable("NQ"), true);
   assert.equal(isTradable("MGC"), true);
   assert.equal(isTradable("AAPL"), false);
-  assert.equal(isTradable("BTCUSD"), false);
+  assert.equal(isTradable("BTCUSD"), true);
 });
 
 test("unknown / manually entered symbols are never tradable", () => {
@@ -45,8 +45,8 @@ test("symbol lookup is case-insensitive", () => {
 
 test("registry has the expected classes", () => {
   assert.equal(listByClass("stocks").length, 8);
-  assert.equal(listByClass("crypto").length, 3);
-  assert.ok(tradableSymbols().every((s) => s.assetClass === "futures"));
+  assert.equal(listByClass("crypto").length, 6);
+  assert.ok(tradableSymbols().every((s) => s.assetClass === "futures" || s.assetClass === "crypto"));
 });
 
 test("score weights sum to 1", () => {

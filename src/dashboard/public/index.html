@@ -3,1397 +3,1573 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Avrrio Trade AI — Dashboard</title>
+    <title>Avrrio Trade AI — Cockpit</title>
     <style>
       :root {
-        --bg: #0f1117;
-        --card: #1a1d27;
-        --line: #2a2e3c;
-        --text: #e6e8ee;
-        --muted: #8b90a0;
-        --ok: #3fb950;
-        --warn: #d29922;
-        --block: #f85149;
-        --blue: #2563eb;
+        --bg: #070810;
+        --bg2: #0d0f1e;
+        --card: #111326;
+        --card2: #161929;
+        --line: #1e2140;
+        --text: #e2e8f0;
+        --muted: #64748b;
+        --green: #00ff88;
+        --green2: #00cc6a;
+        --purple: #8b5cf6;
+        --cyan: #06b6d4;
+        --gold: #f59e0b;
+        --red: #ef4444;
+        --sidebar-w: 56px;
       }
-      * {
-        box-sizing: border-box;
-      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
       body {
-        margin: 0;
-        font:
-          14px/1.5 -apple-system,
-          system-ui,
-          sans-serif;
         background: var(--bg);
         color: var(--text);
+        font: 13px/1.5 -apple-system, system-ui, sans-serif;
+        overflow: hidden;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
       }
-      header {
-        padding: 14px 24px;
+
+      /* ── LOGIN OVERLAY ─────────────────────────────────── */
+      #login-overlay {
+        position: fixed; inset: 0; z-index: 999;
+        background: rgba(7,8,16,0.97);
+        display: flex; align-items: center; justify-content: center;
+      }
+      #login-overlay.hidden { display: none; }
+      .login-box {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 40px 48px;
+        width: 360px;
+        text-align: center;
+      }
+      .login-logo {
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: -1px;
+        background: linear-gradient(135deg, var(--green), var(--cyan));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 8px;
+      }
+      .login-sub { color: var(--muted); font-size: 12px; margin-bottom: 32px; }
+      .login-box input {
+        width: 100%;
+        background: var(--bg2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px 16px;
+        color: var(--text);
+        font-size: 14px;
+        margin-bottom: 16px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .login-box input:focus { border-color: var(--green); }
+      .login-box button {
+        width: 100%;
+        background: linear-gradient(135deg, var(--green), var(--cyan));
+        border: none;
+        border-radius: 8px;
+        padding: 12px;
+        color: #070810;
+        font-weight: 700;
+        font-size: 14px;
+        cursor: pointer;
+        transition: opacity 0.2s;
+      }
+      .login-box button:hover { opacity: 0.9; }
+      #login-err { color: var(--red); font-size: 12px; margin-top: 12px; min-height: 18px; }
+
+      /* ── APP SHELL ─────────────────────────────────────── */
+      #app { display: flex; flex: 1; overflow: hidden; }
+
+      /* ── SIDEBAR ───────────────────────────────────────── */
+      #sidebar {
+        width: var(--sidebar-w);
+        background: var(--card);
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 12px 0;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      .sb-logo {
+        font-size: 20px;
+        font-weight: 900;
+        background: linear-gradient(135deg, var(--green), var(--cyan));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 12px;
+        letter-spacing: -1px;
+      }
+      .sb-btn {
+        width: 40px; height: 40px;
+        border-radius: 10px;
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 18px;
+        position: relative;
+        transition: background 0.15s, color 0.15s;
+      }
+      .sb-btn:hover, .sb-btn.active {
+        background: rgba(0,255,136,0.1);
+        color: var(--green);
+      }
+      .sb-btn .tip {
+        position: absolute; left: 48px; top: 50%; transform: translateY(-50%);
+        background: var(--card2); border: 1px solid var(--line);
+        border-radius: 6px; padding: 4px 10px;
+        font-size: 11px; color: var(--text);
+        white-space: nowrap; pointer-events: none;
+        opacity: 0; transition: opacity 0.15s;
+        z-index: 100;
+      }
+      .sb-btn:hover .tip { opacity: 1; }
+      .sb-spacer { flex: 1; }
+
+      /* ── MAIN COLUMN ───────────────────────────────────── */
+      #main-col {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-width: 0;
+      }
+
+      /* ── HEADER ────────────────────────────────────────── */
+      #topbar {
+        height: 52px;
+        background: var(--card);
         border-bottom: 1px solid var(--line);
         display: flex;
         align-items: center;
+        padding: 0 16px;
         gap: 12px;
+        flex-shrink: 0;
       }
-      h1 {
-        font-size: 17px;
-        margin: 0;
+      .acct-selector {
+        display: flex;
+        background: var(--bg2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        flex-shrink: 0;
       }
-      .tag {
+      .acct-btn {
+        padding: 5px 12px;
+        border: none;
+        background: transparent;
         color: var(--muted);
-        font-size: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
       }
-      .spacer {
+      .acct-btn.active { background: var(--green); color: #070810; }
+      .hdr-stat {
+        display: flex; flex-direction: column; align-items: flex-start;
+        border-left: 1px solid var(--line);
+        padding-left: 12px;
+      }
+      .hdr-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+      .hdr-value { font-size: 13px; font-weight: 700; }
+      .hdr-value.pos { color: var(--green); }
+      .hdr-value.neg { color: var(--red); }
+      .goal-wrap { flex: 1; max-width: 180px; }
+      .goal-label { font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+      .goal-bar-bg {
+        height: 5px; background: var(--line); border-radius: 3px; overflow: hidden;
+      }
+      .goal-bar { height: 100%; background: linear-gradient(90deg, var(--green), var(--cyan)); border-radius: 3px; transition: width 0.5s; }
+      .hdr-spacer { flex: 1; }
+      .clock { font-size: 12px; color: var(--cyan); font-weight: 700; font-variant-numeric: tabular-nums; }
+      .status-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 6px var(--green);
+        animation: pulse-dot 2s infinite;
+        flex-shrink: 0;
+      }
+      @keyframes pulse-dot {
+        0%,100% { opacity: 1; }
+        50% { opacity: 0.4; }
+      }
+      #engine-label { font-size: 11px; color: var(--muted); }
+
+      /* ── CONTENT GRID ──────────────────────────────────── */
+      #content {
         flex: 1;
-      }
-      main {
-        padding: 24px;
         display: grid;
-        gap: 16px;
-        max-width: 1040px;
+        grid-template-columns: 1fr 320px 300px;
+        gap: 0;
+        overflow: hidden;
+        min-height: 0;
       }
-      .grid {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+
+      /* ── PANELS ────────────────────────────────────────── */
+      .panel {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        min-height: 0;
       }
+      .panel:not(:last-child) { border-right: 1px solid var(--line); }
+      .panel::-webkit-scrollbar { width: 4px; }
+      .panel::-webkit-scrollbar-track { background: transparent; }
+      .panel::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+
       .card {
         background: var(--card);
         border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 16px;
+        border-radius: 12px;
+        padding: 12px 14px;
+        flex-shrink: 0;
       }
-      .card h2 {
-        font-size: 12px;
-        text-transform: uppercase;
-        color: var(--muted);
-        margin: 0 0 8px;
-        letter-spacing: 0.04em;
-      }
-      .big {
-        font-size: 24px;
-        font-weight: 600;
-      }
-      .warnings li {
-        color: var(--warn);
-      }
-      label {
-        display: block;
-        color: var(--muted);
-        font-size: 12px;
-        margin-bottom: 4px;
-      }
-      input,
-      select,
-      button {
-        background: #0f1117;
-        color: var(--text);
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 8px;
-        font: inherit;
-        width: 100%;
-      }
-      button {
-        cursor: pointer;
-        font-weight: 600;
-      }
-      .btn-primary {
-        background: var(--blue);
-        border-color: var(--blue);
-      }
-      .btn-ok {
-        background: var(--ok);
-        border-color: var(--ok);
-        color: #06210e;
-      }
-      .btn-danger {
-        background: var(--block);
-        border-color: var(--block);
-      }
-      .btn-ghost {
-        background: transparent;
-      }
-      .row {
-        display: grid;
-        gap: 8px;
-        grid-template-columns: repeat(3, 1fr);
-      }
-      .row6 {
-        display: grid;
-        gap: 8px;
-        grid-template-columns: repeat(6, 1fr);
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 13px;
-      }
-      th,
-      td {
-        text-align: left;
-        padding: 6px 8px;
-        border-bottom: 1px solid var(--line);
-        vertical-align: top;
-      }
-      th {
-        color: var(--muted);
-        font-weight: 500;
-      }
-      .v-warn {
-        color: var(--warn);
-      }
-      .v-block {
-        color: var(--block);
-      }
-      .pill {
-        display: inline-block;
-        padding: 1px 8px;
-        border-radius: 999px;
+      .card-title {
         font-size: 11px;
-        border: 1px solid var(--line);
-      }
-      .pill.pending {
-        color: var(--warn);
-        border-color: var(--warn);
-      }
-      .pill.armed {
-        color: var(--blue);
-        border-color: var(--blue);
-      }
-      .pill.executed {
-        color: var(--ok);
-        border-color: var(--ok);
-      }
-      .pill.blocked,
-      .pill.rejected {
-        color: var(--block);
-        border-color: var(--block);
-      }
-      .rec {
-        display: grid;
-        gap: 6px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--muted);
         margin-bottom: 10px;
-      }
-      .rec .actions {
-        display: flex;
-        gap: 8px;
-      }
-      .rec .actions button {
-        width: auto;
-        padding: 6px 14px;
-      }
-      .chat {
-        border-top: 1px dashed var(--line);
-        padding-top: 8px;
-        margin-top: 4px;
-      }
-      .chat-row {
-        display: flex;
-        gap: 6px;
-        margin-top: 6px;
-      }
-      .chat-row input {
-        flex: 1;
-        padding: 6px 10px;
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        background: transparent;
-        color: inherit;
-      }
-      .chatlog {
-        display: grid;
-        gap: 6px;
-        margin-top: 6px;
-      }
-      .chatmsg {
-        font-size: 13px;
-        line-height: 1.4;
-        padding: 6px 10px;
-        border-radius: 6px;
-      }
-      .chatmsg.you {
-        background: rgba(127, 127, 127, 0.1);
-      }
-      .chatmsg.ai {
-        background: rgba(80, 160, 255, 0.1);
-      }
-      .hidden {
-        display: none;
-      }
-      #login {
-        max-width: 360px;
-        margin: 80px auto;
-      }
-      .kill {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 6px;
       }
+      .card-title .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+      /* ── CHART ─────────────────────────────────────────── */
+      .chart-header {
+        display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+      }
+      #chart-symbol { font-size: 15px; font-weight: 800; }
+      #chart-price { font-size: 22px; font-weight: 800; color: var(--green); font-variant-numeric: tabular-nums; }
+      #chart-change { font-size: 12px; font-weight: 600; }
+      #chart-change.pos { color: var(--green); }
+      #chart-change.neg { color: var(--red); }
+      .chart-btns { display: flex; gap: 4px; margin-left: auto; }
+      .chart-btn {
+        padding: 3px 8px;
+        border-radius: 5px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        font-size: 10px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .chart-btn.active { background: var(--green); color: #070810; border-color: var(--green); font-weight: 700; }
+      #chart-canvas {
+        width: 100%;
+        height: 200px;
+        display: block;
+        border-radius: 6px;
+        cursor: crosshair;
+      }
+
+      /* ── POSITIONS ─────────────────────────────────────── */
+      .pos-row {
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+      }
+      .pos-row:last-child { border-bottom: none; }
+      .pos-side {
+        font-size: 9px; font-weight: 700;
+        padding: 2px 6px; border-radius: 4px;
+        text-transform: uppercase; flex-shrink: 0;
+      }
+      .pos-side.long { background: rgba(0,255,136,0.15); color: var(--green); }
+      .pos-side.short { background: rgba(239,68,68,0.15); color: var(--red); }
+      .pos-sym { font-weight: 700; flex: 1; }
+      .pos-qty { color: var(--muted); }
+      .pos-pnl { font-weight: 700; margin-left: auto; }
+      .pos-pnl.pos { color: var(--green); }
+      .pos-pnl.neg { color: var(--red); }
+      .pos-close {
+        background: rgba(239,68,68,0.15);
+        border: none; border-radius: 4px;
+        color: var(--red); cursor: pointer;
+        font-size: 10px; padding: 3px 6px;
+        transition: background 0.15s;
+      }
+      .pos-close:hover { background: rgba(239,68,68,0.3); }
+      #no-positions { color: var(--muted); font-size: 12px; padding: 8px 0; }
+
+      /* ── RISK METER ────────────────────────────────────── */
+      .risk-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+      .risk-stat { text-align: center; }
+      .risk-val { font-size: 16px; font-weight: 800; color: var(--gold); }
+      .risk-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+      /* ── NEWS / EVENTS ─────────────────────────────────── */
+      .news-row {
+        display: flex; gap: 8px; align-items: flex-start;
+        padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 11px;
+      }
+      .news-row:last-child { border-bottom: none; }
+      .news-time { color: var(--muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+      .news-impact { flex-shrink: 0; }
+      .imp-high { color: var(--red); }
+      .imp-med { color: var(--gold); }
+      .imp-low { color: var(--muted); }
+
+      /* ── CENTER PANEL ──────────────────────────────────── */
+      .signal-ring-wrap { display: flex; justify-content: center; margin: 6px 0; }
+      svg.ring { overflow: visible; }
+      .ring-bg { fill: none; stroke: var(--line); stroke-width: 14; }
+      .ring-fill { fill: none; stroke-width: 14; stroke-linecap: round; transition: stroke-dashoffset 0.8s ease; }
+      .ring-label { font-size: 32px; font-weight: 900; fill: var(--text); font-family: -apple-system, sans-serif; }
+      .ring-sub { font-size: 11px; fill: var(--muted); font-family: -apple-system, sans-serif; }
+
+      .rec-card {
+        background: linear-gradient(135deg, rgba(139,92,246,0.1), rgba(6,182,212,0.05));
+        border: 1px solid rgba(139,92,246,0.3);
+        border-radius: 12px;
+        padding: 14px;
+        flex-shrink: 0;
+      }
+      .rec-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+      .rec-sym { font-size: 18px; font-weight: 800; }
+      .rec-dir {
+        font-size: 10px; font-weight: 700;
+        padding: 3px 8px; border-radius: 5px;
+        text-transform: uppercase;
+      }
+      .rec-dir.long { background: rgba(0,255,136,0.2); color: var(--green); }
+      .rec-dir.short { background: rgba(239,68,68,0.2); color: var(--red); }
+      .rec-scores { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+      .rec-score-item { font-size: 11px; }
+      .rec-score-lbl { color: var(--muted); margin-bottom: 2px; }
+      .rec-score-bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 1px; }
+      .rec-score-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--purple), var(--cyan)); }
+      .rec-score-val { font-weight: 700; font-size: 10px; }
+      .rec-levels { display: flex; gap: 8px; margin-bottom: 10px; font-size: 11px; }
+      .rec-level { flex: 1; text-align: center; }
+      .rec-level-lbl { color: var(--muted); font-size: 10px; }
+      .rec-level-val { font-weight: 700; font-variant-numeric: tabular-nums; }
+      .rec-level-val.entry { color: var(--cyan); }
+      .rec-level-val.stop { color: var(--red); }
+      .rec-level-val.target { color: var(--green); }
+      .rec-actions { display: flex; gap: 8px; }
+      .btn-approve {
+        flex: 1; padding: 9px; border-radius: 8px; border: none;
+        background: linear-gradient(135deg, var(--green), var(--cyan));
+        color: #070810; font-weight: 700; font-size: 12px; cursor: pointer;
+        transition: opacity 0.2s;
+      }
+      .btn-approve:hover { opacity: 0.9; }
+      .btn-reject {
+        flex: 1; padding: 9px; border-radius: 8px;
+        border: 1px solid var(--line);
+        background: transparent; color: var(--muted);
+        font-size: 12px; cursor: pointer;
+        transition: all 0.15s;
+      }
+      .btn-reject:hover { border-color: var(--red); color: var(--red); }
+      #no-rec { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 0; }
+
+      /* ── PERF SPARKLINE ────────────────────────────────── */
+      #perf-canvas { width: 100%; height: 80px; display: block; border-radius: 6px; }
+
+      /* ── RIGHT PANEL ───────────────────────────────────── */
+      /* Top 5 */
+      .opp-row {
+        display: flex; align-items: center; gap: 8px;
+        padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px;
+        cursor: pointer; transition: background 0.1s; border-radius: 4px;
+      }
+      .opp-row:last-child { border-bottom: none; }
+      .opp-row:hover { background: rgba(255,255,255,0.03); }
+      .opp-rank { font-size: 10px; color: var(--muted); width: 14px; flex-shrink: 0; }
+      .opp-sym { font-weight: 700; flex-shrink: 0; width: 52px; }
+      .opp-broker {
+        font-size: 9px; font-weight: 600; padding: 1px 5px;
+        border-radius: 3px; flex-shrink: 0;
+      }
+      .opp-broker.topstep { background: rgba(245,158,11,0.15); color: var(--gold); }
+      .opp-broker.coinbase { background: rgba(6,182,212,0.15); color: var(--cyan); }
+      .opp-bar-bg { flex: 1; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+      .opp-bar { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--purple), var(--cyan)); }
+      .opp-score { font-weight: 800; font-size: 13px; width: 28px; text-align: right; flex-shrink: 0; }
+      .opp-dir { font-size: 10px; flex-shrink: 0; }
+      .opp-dir.bull { color: var(--green); }
+      .opp-dir.bear { color: var(--red); }
+
+      /* Heatmap */
+      .heatmap-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+      .hm-cell {
+        aspect-ratio: 1; border-radius: 4px;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        font-size: 8px; font-weight: 700; cursor: pointer;
+        transition: transform 0.15s;
+        border: 1px solid transparent;
+      }
+      .hm-cell:hover { transform: scale(1.08); border-color: rgba(255,255,255,0.2); }
+      .hm-sym { font-size: 7px; opacity: 0.8; }
+
+      /* AI Chat */
+      #chat-messages {
+        flex: 1; overflow-y: auto;
+        display: flex; flex-direction: column; gap: 8px;
+        padding: 4px 0;
+        min-height: 120px; max-height: 240px;
+      }
+      #chat-messages::-webkit-scrollbar { width: 3px; }
+      #chat-messages::-webkit-scrollbar-thumb { background: var(--line); }
+      .msg { display: flex; flex-direction: column; gap: 2px; }
+      .msg-who { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+      .msg-who.user { color: var(--cyan); }
+      .msg-who.ai { color: var(--purple); }
+      .msg-body {
+        background: var(--card2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .msg.user .msg-body {
+        background: rgba(6,182,212,0.08);
+        border-color: rgba(6,182,212,0.2);
+        margin-left: 16px;
+      }
+      .msg.ai .msg-body {
+        background: rgba(139,92,246,0.08);
+        border-color: rgba(139,92,246,0.2);
+      }
+      .chat-input-row {
+        display: flex; gap: 6px; margin-top: 8px; flex-shrink: 0;
+      }
+      #chat-input {
+        flex: 1;
+        background: var(--bg2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 12px;
+        color: var(--text);
+        font-size: 12px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      #chat-input:focus { border-color: var(--purple); }
+      #chat-send {
+        background: var(--purple);
+        border: none; border-radius: 8px;
+        color: #fff; cursor: pointer;
+        padding: 8px 14px; font-size: 13px;
+        transition: opacity 0.2s; flex-shrink: 0;
+      }
+      #chat-send:hover { opacity: 0.8; }
+      #chat-thinking {
+        color: var(--purple); font-size: 11px;
+        animation: blink 1s infinite;
+        display: none;
+      }
+      @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+      /* AI Engine Status */
+      .ai-status-rows { display: flex; flex-direction: column; gap: 6px; }
+      .ai-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+      .ai-row-label { flex: 1; color: var(--muted); }
+      .ai-badge {
+        font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px;
+      }
+      .ai-badge.ok { background: rgba(0,255,136,0.15); color: var(--green); }
+      .ai-badge.warn { background: rgba(245,158,11,0.15); color: var(--gold); }
+      .ai-badge.off { background: rgba(100,116,139,0.2); color: var(--muted); }
+      .ai-badge.live { background: rgba(139,92,246,0.2); color: var(--purple); }
+
+      /* Warnings */
+      #warnings-list { display: flex; flex-direction: column; gap: 4px; }
+      .warn-item {
+        display: flex; gap: 8px; align-items: flex-start;
+        font-size: 11px; color: var(--muted);
+        padding: 6px 8px; background: rgba(245,158,11,0.05);
+        border: 1px solid rgba(245,158,11,0.1);
+        border-radius: 6px; line-height: 1.4;
+      }
+      .warn-icon { flex-shrink: 0; }
+
+      /* ── SCANNER MODAL ─────────────────────────────────── */
+      .modal-overlay {
+        position: fixed; inset: 0; z-index: 200;
+        background: rgba(7,8,16,0.85);
+        display: flex; align-items: center; justify-content: center;
+        display: none;
+      }
+      .modal-overlay.open { display: flex; }
+      .modal {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        width: 680px;
+        max-height: 80vh;
+        display: flex; flex-direction: column;
+        overflow: hidden;
+      }
+      .modal-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--line);
+        display: flex; align-items: center; gap: 12px;
+      }
+      .modal-header h2 { font-size: 15px; flex: 1; }
+      .modal-close {
+        background: none; border: none; color: var(--muted);
+        font-size: 18px; cursor: pointer; line-height: 1;
+        transition: color 0.15s;
+      }
+      .modal-close:hover { color: var(--text); }
+      .modal-filters {
+        padding: 12px 20px; display: flex; gap: 6px;
+        border-bottom: 1px solid var(--line);
+      }
+      .filter-btn {
+        padding: 5px 12px; border-radius: 6px;
+        border: 1px solid var(--line);
+        background: transparent; color: var(--muted);
+        font-size: 11px; cursor: pointer; font-weight: 600;
+        transition: all 0.15s;
+      }
+      .filter-btn.active { background: var(--green); color: #070810; border-color: var(--green); }
+      .modal-body { overflow-y: auto; flex: 1; padding: 12px 20px; }
+      .scan-row {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 0; border-bottom: 1px solid var(--line);
+        cursor: pointer; font-size: 12px; transition: background 0.1s;
+      }
+      .scan-row:last-child { border-bottom: none; }
+      .scan-row:hover { background: rgba(255,255,255,0.02); }
+      .scan-num { color: var(--muted); width: 18px; text-align: right; flex-shrink: 0; }
+      .scan-sym { font-weight: 700; width: 60px; flex-shrink: 0; }
+      .scan-name { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .scan-broker {
+        font-size: 9px; font-weight: 700; padding: 2px 6px;
+        border-radius: 3px; flex-shrink: 0;
+      }
+      .scan-broker.topstep { background: rgba(245,158,11,0.15); color: var(--gold); }
+      .scan-broker.coinbase { background: rgba(6,182,212,0.15); color: var(--cyan); }
+      .scan-bar-bg { width: 80px; height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+      .scan-bar { height: 100%; border-radius: 3px; }
+      .scan-score { font-weight: 800; width: 32px; text-align: right; flex-shrink: 0; }
+      .scan-dir { width: 14px; flex-shrink: 0; font-size: 11px; }
+      #scan-spinner { text-align: center; padding: 32px; color: var(--muted); }
+
+      /* ── APPROVALS MODAL ───────────────────────────────── */
+      .appr-row {
+        padding: 14px 0; border-bottom: 1px solid var(--line);
+        font-size: 12px;
+      }
+      .appr-row:last-child { border-bottom: none; }
+      .appr-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .appr-sym { font-size: 16px; font-weight: 800; }
+      .appr-dir { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 5px; }
+      .appr-dir.long { background: rgba(0,255,136,0.2); color: var(--green); }
+      .appr-dir.short { background: rgba(239,68,68,0.2); color: var(--red); }
+      .appr-score { margin-left: auto; font-weight: 800; color: var(--purple); }
+      .appr-details { color: var(--muted); margin-bottom: 8px; line-height: 1.6; }
+      .appr-actions { display: flex; gap: 8px; }
+      #no-approvals { color: var(--muted); text-align: center; padding: 32px; }
+      .appr-exp { font-size: 10px; color: var(--muted); margin-left: auto; }
+
+      /* ── SCAN TRIGGER BUTTON ───────────────────────────── */
+      .scan-trigger-btn {
+        padding: 7px 14px; border-radius: 8px;
+        background: rgba(0,255,136,0.1);
+        border: 1px solid rgba(0,255,136,0.3);
+        color: var(--green); font-weight: 700; font-size: 11px;
+        cursor: pointer; transition: all 0.15s; white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .scan-trigger-btn:hover { background: rgba(0,255,136,0.2); }
+      #scan-running { color: var(--gold); font-size: 11px; animation: blink 1s infinite; display: none; flex-shrink: 0; }
+
+      /* ── COINBASE STATUS ───────────────────────────────── */
+      .cb-checklist { display: flex; flex-direction: column; gap: 5px; }
+      .cb-check { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+      .cb-check-icon { flex-shrink: 0; }
+      .cb-check.pass .cb-check-icon { color: var(--green); }
+      .cb-check.fail .cb-check-icon { color: var(--red); }
+      .cb-check.warn .cb-check-icon { color: var(--gold); }
+
+      /* scrollbar for panel */
+      .panel { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
     </style>
   </head>
   <body>
-    <!-- Login -->
-    <div id="login" class="card">
-      <h2>Avrrio Trade AI — sign in</h2>
-      <label>Dashboard password</label>
-      <input id="password" type="password" placeholder="DASHBOARD_PASSWORD" />
-      <button class="btn-primary" id="loginBtn" style="margin-top: 10px">
-        Sign in
-      </button>
-      <div id="loginErr" class="v-block" style="margin-top: 8px"></div>
-      <div class="tag" style="margin-top: 8px">
-        If no password is configured, leave blank and sign in.
+
+  <!-- LOGIN OVERLAY -->
+  <div id="login-overlay">
+    <div class="login-box">
+      <div class="login-logo">AVRRIO</div>
+      <div class="login-sub">AI Trading Cockpit · Secure Access</div>
+      <input type="password" id="pw-input" placeholder="Dashboard password" autocomplete="current-password" />
+      <button id="pw-btn">Unlock</button>
+      <div id="login-err"></div>
+    </div>
+  </div>
+
+  <div id="app">
+    <!-- SIDEBAR -->
+    <nav id="sidebar">
+      <div class="sb-logo">A</div>
+      <button class="sb-btn active" id="nav-dash" title=""><span>⊞</span><span class="tip">Dashboard</span></button>
+      <button class="sb-btn" id="nav-scan" title=""><span>⊕</span><span class="tip">Scanner</span></button>
+      <button class="sb-btn" id="nav-appr" title=""><span>✓</span><span class="tip">Approvals</span></button>
+      <button class="sb-btn" id="nav-coinbase" title=""><span>◎</span><span class="tip">Coinbase Status</span></button>
+      <div class="sb-spacer"></div>
+      <button class="sb-btn" id="nav-warn" title=""><span>⚠</span><span class="tip">Warnings</span></button>
+      <button class="sb-btn" id="nav-settings" title=""><span>⚙</span><span class="tip">Settings</span></button>
+    </nav>
+
+    <div id="main-col">
+      <!-- HEADER -->
+      <div id="topbar">
+        <div class="acct-selector">
+          <button class="acct-btn active" id="acct-topstep">TopstepX 50K</button>
+          <button class="acct-btn" id="acct-coinbase">Coinbase Advanced</button>
+        </div>
+        <div class="hdr-stat">
+          <div class="hdr-label">Balance</div>
+          <div class="hdr-value" id="hdr-balance">$50,000</div>
+        </div>
+        <div class="hdr-stat">
+          <div class="hdr-label">Day P&amp;L</div>
+          <div class="hdr-value pos" id="hdr-pnl">+$0.00</div>
+        </div>
+        <div class="goal-wrap">
+          <div class="goal-label">Daily Goal <span id="goal-pct">0%</span></div>
+          <div class="goal-bar-bg"><div class="goal-bar" id="goal-bar" style="width:0%"></div></div>
+        </div>
+        <div class="hdr-stat">
+          <div class="hdr-label">Risk Left</div>
+          <div class="hdr-value" id="hdr-risk">—</div>
+        </div>
+        <div class="hdr-spacer"></div>
+        <button class="scan-trigger-btn" id="scan-now-btn">⚡ Scan Now</button>
+        <span id="scan-running">Scanning…</span>
+        <div class="clock" id="et-clock">00:00:00 ET</div>
+        <div class="status-dot" id="engine-dot"></div>
+        <span id="engine-label">Online</span>
+      </div>
+
+      <!-- CONTENT GRID -->
+      <div id="content">
+
+        <!-- LEFT PANEL -->
+        <div class="panel" id="panel-left">
+          <!-- Chart -->
+          <div class="card">
+            <div class="chart-header">
+              <div>
+                <div id="chart-symbol" style="font-size:13px;color:var(--muted)">NQ</div>
+                <div id="chart-price">—</div>
+              </div>
+              <div id="chart-change" class="">—</div>
+              <div class="chart-btns">
+                <button class="chart-btn active" data-tf="5m">5m</button>
+                <button class="chart-btn" data-tf="15m">15m</button>
+                <button class="chart-btn" data-tf="1h">1h</button>
+              </div>
+            </div>
+            <canvas id="chart-canvas" height="200"></canvas>
+          </div>
+
+          <!-- Open Positions -->
+          <div class="card">
+            <div class="card-title"><span class="dot"></span>Open Positions</div>
+            <div id="positions-list">
+              <div id="no-positions">No open positions</div>
+            </div>
+          </div>
+
+          <!-- Risk Meter -->
+          <div class="card">
+            <div class="card-title"><span class="dot" style="background:var(--gold)"></span>Risk Meter</div>
+            <div class="risk-grid">
+              <div class="risk-stat">
+                <div class="risk-val" id="risk-daily-loss">$0</div>
+                <div class="risk-lbl">Daily Loss</div>
+              </div>
+              <div class="risk-stat">
+                <div class="risk-val" id="risk-max-loss">$0</div>
+                <div class="risk-lbl">Max Loss</div>
+              </div>
+              <div class="risk-stat">
+                <div class="risk-val" id="risk-trades">0 / —</div>
+                <div class="risk-lbl">Trades Today</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- News / Events -->
+          <div class="card">
+            <div class="card-title"><span class="dot" style="background:var(--gold)"></span>Economic Calendar</div>
+            <div id="news-list">
+              <div class="news-row">
+                <span class="news-time">8:30 AM</span>
+                <span class="news-impact imp-high">●</span>
+                <span>CPI (MoM) — High Impact</span>
+              </div>
+              <div class="news-row">
+                <span class="news-time">2:00 PM</span>
+                <span class="news-impact imp-med">●</span>
+                <span>FOMC Minutes</span>
+              </div>
+              <div class="news-row">
+                <span class="news-time">3:00 PM</span>
+                <span class="news-impact imp-low">●</span>
+                <span>ISM Services PMI</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CENTER PANEL -->
+        <div class="panel" id="panel-center">
+          <!-- Signal Ring -->
+          <div class="card">
+            <div class="card-title"><span class="dot" style="background:var(--purple)"></span>AI Signal Confidence</div>
+            <div class="signal-ring-wrap">
+              <svg class="ring" width="160" height="160" viewBox="0 0 160 160">
+                <circle class="ring-bg" cx="80" cy="80" r="60"/>
+                <circle class="ring-fill" id="conf-ring" cx="80" cy="80" r="60"
+                  stroke="url(#ring-grad)"
+                  stroke-dasharray="377"
+                  stroke-dashoffset="377"
+                  transform="rotate(-90 80 80)"/>
+                <defs>
+                  <linearGradient id="ring-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#8b5cf6"/>
+                    <stop offset="100%" stop-color="#06b6d4"/>
+                  </linearGradient>
+                </defs>
+                <text class="ring-label" x="80" y="78" text-anchor="middle" dominant-baseline="middle" id="conf-pct">—%</text>
+                <text class="ring-sub" x="80" y="96" text-anchor="middle" id="conf-label">No active signal</text>
+              </svg>
+            </div>
+          </div>
+
+          <!-- AI Recommendation Card -->
+          <div id="rec-wrap">
+            <div id="no-rec">No active recommendation</div>
+          </div>
+
+          <!-- Performance Sparkline -->
+          <div class="card">
+            <div class="card-title"><span class="dot" style="background:var(--cyan)"></span>Session Performance</div>
+            <canvas id="perf-canvas" height="80"></canvas>
+          </div>
+
+          <!-- Warnings -->
+          <div class="card">
+            <div class="card-title"><span class="dot" style="background:var(--gold)"></span>Config Warnings</div>
+            <div id="warnings-list"><div style="color:var(--muted);font-size:12px">Loading…</div></div>
+          </div>
+        </div>
+
+        <!-- RIGHT PANEL -->
+        <div class="panel" id="panel-right">
+          <!-- Top 5 Opportunities -->
+          <div class="card">
+            <div class="card-title"><span class="dot" style="background:var(--cyan)"></span>Top Opportunities</div>
+            <div id="top5-list"><div style="color:var(--muted);font-size:12px;padding:8px 0">Run a scan to see top setups</div></div>
+          </div>
+
+          <!-- Heatmap -->
+          <div class="card">
+            <div class="card-title"><span class="dot" style="background:var(--purple)"></span>Market Heatmap</div>
+            <div class="heatmap-grid" id="heatmap-grid"></div>
+          </div>
+
+          <!-- AI Chat -->
+          <div class="card" style="flex:1;display:flex;flex-direction:column;min-height:280px;">
+            <div class="card-title"><span class="dot" style="background:var(--purple)"></span>AI Assistant</div>
+            <div id="chat-messages"></div>
+            <div id="chat-thinking">Avrrio is thinking…</div>
+            <div class="chat-input-row">
+              <input type="text" id="chat-input" placeholder="Ask about any market, trade, or setup…" autocomplete="off" />
+              <button id="chat-send">➤</button>
+            </div>
+          </div>
+
+          <!-- AI Engine Status -->
+          <div class="card">
+            <div class="card-title"><span class="dot" style="background:var(--green)"></span>AI Engine Status</div>
+            <div class="ai-status-rows" id="ai-status-rows">
+              <div class="ai-row"><span class="ai-row-label">Claude (Analysis)</span><span class="ai-badge off" id="ai-claude">—</span></div>
+              <div class="ai-row"><span class="ai-row-label">OpenAI (Confirmation)</span><span class="ai-badge off" id="ai-openai">—</span></div>
+              <div class="ai-row"><span class="ai-row-label">Live Trading</span><span class="ai-badge off" id="ai-live">PAPER</span></div>
+              <div class="ai-row"><span class="ai-row-label">Kill Switch</span><span class="ai-badge ok" id="ai-kill">OFF</span></div>
+              <div class="ai-row"><span class="ai-row-label">Trading Mode</span><span class="ai-badge live" id="ai-mode">—</span></div>
+              <div class="ai-row"><span class="ai-row-label">Coinbase</span><span class="ai-badge off" id="ai-coinbase">—</span></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
+  </div>
 
-    <!-- App -->
-    <div id="app" class="hidden">
-      <header>
-        <h1>Avrrio Trade AI</h1>
-        <span class="tag" id="modeTag"></span>
-        <span class="spacer"></span>
-        <select
-          id="modeSelect"
-          title="Trading mode"
-          style="width: auto; padding: 8px 10px; border-radius: 8px"
-        >
-          <option value="advisor">Advisor (alerts only)</option>
-          <option value="telegram_approval">Telegram approval</option>
-          <option value="full_auto">Full auto</option>
-        </select>
-        <button
-          class="btn-ghost"
-          id="tradeModeBtn"
-          style="width: auto; padding: 8px 16px"
-        >
-          Enable live trading only after all checks pass
-        </button>
-        <button
-          class="btn-danger"
-          id="killBtn"
-          style="width: auto; padding: 8px 16px"
-        >
-          🛑 Emergency Stop
-        </button>
-      </header>
-      <main>
-        <ul class="warnings" id="warnings"></ul>
-        <div class="grid" id="account"></div>
-        <div class="card" id="authPanel">
-          <h2>Auth Test</h2>
-          <div class="tag">Click Auth test to diagnose ProjectX safely.</div>
-        </div>
-
-        <div class="card">
-          <h2>🔥 Top opportunities today (Avrrio Score)</h2>
-          <div class="kill" style="margin-bottom: 10px">
-            <label style="margin: 0">Scan:</label>
-            <label class="tag"
-              ><input type="checkbox" id="cFut" checked style="width: auto" />
-              Futures</label
-            >
-            <label class="tag"
-              ><input type="checkbox" id="cStk" checked style="width: auto" />
-              Stocks</label
-            >
-            <label class="tag"
-              ><input type="checkbox" id="cCry" checked style="width: auto" />
-              Crypto</label
-            >
-            <button
-              class="btn-ghost"
-              id="scanBtn"
-              style="width: auto; padding: 6px 14px"
-            >
-              Scan now
-            </button>
-            <button
-              class="btn-primary"
-              id="cycleBtn"
-              style="width: auto; padding: 6px 14px"
-              title="Scan, qualify (score≥85 & R/R≥2), and create + SMS the top 1–3 setups"
-            >
-              Run scan cycle (alert worthy)
-            </button>
-            <span class="tag" id="schedTag"></span>
-          </div>
-          <div class="kill" style="margin-bottom: 10px">
-            <button
-              class="btn-ghost"
-              id="schedToggle"
-              style="width: auto; padding: 6px 12px"
-            >
-              Enable scheduler
-            </button>
-            <label class="tag" style="margin: 0"
-              >Interval (min)
-              <input
-                id="schedInterval"
-                type="number"
-                value="20"
-                style="width: 70px; display: inline-block; padding: 4px"
-            /></label>
-            <span class="tag" id="schedTimes"></span>
-          </div>
-          <div id="scan"></div>
-        </div>
-
-        <div class="card">
-          <h2>📈 Rank every market</h2>
-          <div class="kill" style="margin-bottom: 10px">
-            <button
-              class="btn-ghost"
-              id="rankBtn"
-              style="width: auto; padding: 6px 14px"
-              title="Numbered ranking of every symbol in the universe, best to worst — read-only, never proposes a trade"
-            >
-              Rank every market
-            </button>
-          </div>
-          <div id="rank"></div>
-        </div>
-
-        <div class="card">
-          <h2>Propose a trade (AI consensus + risk check, then YOU approve)</h2>
-          <div class="row6">
-            <div>
-              <label>Setup</label
-              ><input id="setupName" placeholder="(optional)" />
-            </div>
-            <div>
-              <label>Asset class</label>
-              <select id="assetClass">
-                <option value="">all</option>
-                <option value="futures">futures</option>
-                <option value="stocks">stocks</option>
-                <option value="crypto">crypto</option>
-              </select>
-            </div>
-            <div>
-              <label>Symbol</label
-              ><select id="symbolPicker"></select>
-            </div>
-            <div>
-              <label>Symbol (manual)</label><input id="symbol" value="NQ" />
-            </div>
-            <div>
-              <label>Side</label
-              ><select id="side">
-                <option>long</option>
-                <option>short</option>
-              </select>
-            </div>
-            <div>
-              <label>Size</label><input id="size" type="number" value="1" />
-            </div>
-          </div>
-          <div class="row6" style="margin-top: 8px">
-            <div>
-              <label>Entry</label
-              ><input id="entry" type="number" value="20000" />
-            </div>
-            <div>
-              <label>Stop</label><input id="stop" type="number" value="19960" />
-            </div>
-            <div>
-              <label>Target</label
-              ><input id="target" type="number" value="20080" />
-            </div>
-            <div
-              style="
-                grid-column: span 3;
-                display: flex;
-                align-items: end;
-                gap: 8px;
-              "
-            >
-              <button class="btn-primary" id="proposeBtn" style="width: auto">
-                Generate recommendation
-              </button>
-              <button class="btn-ghost" id="whyBtn" style="width: auto">
-                🔎 Why?
-              </button>
-              <span
-                id="tradeNote"
-                class="tag"
-                style="align-self: center"
-              ></span>
-            </div>
-          </div>
-          <div id="proposeErr" class="v-block" style="margin-top: 8px"></div>
-          <div
-            id="whyOut"
-            class="tag"
-            style="margin-top: 8px; white-space: pre-wrap"
-          ></div>
-        </div>
-
-        <div class="card">
-          <h2>Pending approvals</h2>
-          <div id="recs"></div>
-        </div>
-
-        <div class="card">
-          <h2>Live positions (Trade Management)</h2>
-          <div id="positions"></div>
-        </div>
-
-        <div class="card">
-          <h2>🧠 Avrrio Memory (your trading habits)</h2>
-          <div id="memory"><div class="tag">Loading…</div></div>
-        </div>
-
-        <div class="card">
-          <h2>Audit log (latest)</h2>
-          <table id="audit">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Type</th>
-                <th>Actor</th>
-                <th>Details</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </main>
+  <!-- SCANNER MODAL -->
+  <div class="modal-overlay" id="scanner-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Market Scanner — All Symbols</h2>
+        <button class="modal-close" id="scanner-close">✕</button>
+      </div>
+      <div class="modal-filters">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="futures">Futures</button>
+        <button class="filter-btn" data-filter="crypto">Crypto</button>
+        <button class="filter-btn" data-filter="stocks">Stocks</button>
+      </div>
+      <div class="modal-body" id="scanner-body">
+        <div id="scan-spinner">No scan data yet — click ⚡ Scan Now</div>
+      </div>
     </div>
+  </div>
 
-    <script>
-      const $ = (id) => document.getElementById(id);
-      let TOKEN = null;
-      const authHeaders = () =>
-        TOKEN ? { authorization: "Bearer " + TOKEN } : {};
-      const api = (path, opts = {}) =>
-        fetch(path, {
-          ...opts,
-          headers: {
-            "content-type": "application/json",
-            ...authHeaders(),
-            ...(opts.headers || {}),
-          },
-        });
+  <!-- APPROVALS MODAL -->
+  <div class="modal-overlay" id="approvals-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Pending Approvals</h2>
+        <button class="modal-close" id="approvals-close">✕</button>
+      </div>
+      <div class="modal-body" id="approvals-body">
+        <div id="no-approvals">No pending approvals</div>
+      </div>
+    </div>
+  </div>
 
-      // Safe JSON parse: never blows up on an HTML error page (502/500/timeout).
-      async function j(res) {
-        const ct = res.headers.get("content-type") || "";
-        if (res.status === 401) {
-          // Session expired or password changed — return to the login screen.
-          TOKEN = null;
-          $("app").classList.add("hidden");
-          $("login").classList.remove("hidden");
-          throw new Error("Session expired — please sign in again.");
-        }
-        if (!res.ok || !ct.includes("application/json")) {
-          const txt = await res.text().catch(() => "");
-          throw new Error(`HTTP ${res.status} ${txt.slice(0, 80)}`.trim());
-        }
-        return res.json();
-      }
-      function showError(msg) {
-        $("warnings").innerHTML =
-          `<li class="v-block">⚠️ ${msg}</li>` + $("warnings").innerHTML;
-      }
+  <!-- COINBASE STATUS MODAL -->
+  <div class="modal-overlay" id="coinbase-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Coinbase Advanced Trade — Status</h2>
+        <button class="modal-close" id="coinbase-close">✕</button>
+      </div>
+      <div class="modal-body" id="coinbase-body">
+        <div style="color:var(--muted);font-size:12px">Loading…</div>
+      </div>
+    </div>
+  </div>
 
-      async function login() {
-        const r = await fetch("/api/login", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ password: $("password").value }),
-        });
-        if (!r.ok) {
-          $("loginErr").textContent = "Invalid password.";
-          return;
-        }
-        TOKEN = (await r.json()).token;
-        $("login").classList.add("hidden");
-        $("app").classList.remove("hidden");
-        await refresh();
-        await loadSymbols();
-        scan();
-      }
+  <!-- WARNINGS MODAL -->
+  <div class="modal-overlay" id="warnings-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Configuration Warnings</h2>
+        <button class="modal-close" id="warnings-close">✕</button>
+      </div>
+      <div class="modal-body" id="warnings-modal-body">
+        <div style="color:var(--muted);font-size:12px">Loading…</div>
+      </div>
+    </div>
+  </div>
 
-      async function refresh() {
-        let s;
-        try {
-          s = await api("/api/status").then(j);
-        } catch (e) {
-          showError("Could not reach the backend: " + e.message);
-          return;
-        }
-        $("warnings").innerHTML = (s.warnings || [])
-          .map((w) => `<li>${w}</li>`)
-          .join("");
-        if (s.accountError)
-          showError("Account data unavailable: " + s.accountError);
-        const a = s.account;
-        const t = s.topstepx || {};
-        const modeLabel =
-          {
-            advisor: "advisor",
-            telegram_approval: "tg-approval",
-            full_auto: "FULL-AUTO",
-          }[s.tradingMode] ||
-          s.tradingMode ||
-          "manual";
-        $("modeTag").textContent =
-          `${s.offline ? "OFFLINE" : "LIVE-DATA"} · trading: ${s.liveTrading ? "LIVE" : "paper"} · mode: ${modeLabel} · AI: ${s.providers.join("+") || "none"} · alerts: ${s.notifications ? s.notifications.primaryChannel : "off"}`;
-        if (s.tradingMode && document.activeElement !== $("modeSelect"))
-          $("modeSelect").value = s.tradingMode;
-        $("killBtn").textContent = s.killSwitch.engaged
-          ? "✅ Clear Emergency Stop"
-          : "🛑 Emergency Stop";
-        $("killBtn").dataset.engaged = s.killSwitch.engaged ? "1" : "";
-        $("tradeModeBtn").textContent = s.liveTrading
-          ? "Trading: LIVE"
-          : "Enable live trading only after all checks pass";
-        $("tradeModeBtn").className = s.liveTrading
-          ? "btn-danger"
-          : "btn-ghost";
-        $("tradeModeBtn").dataset.live = s.liveTrading ? "1" : "";
-        const claudeOn = (s.providers || []).includes("claude");
-        if (s.scheduler) {
-          const sc = s.scheduler;
-          $("schedTag").textContent =
-            `scheduler ${sc.enabled ? "ON" : "off"} · scans today ${sc.scansToday}`;
-          $("schedToggle").textContent = sc.enabled
-            ? "Disable scheduler"
-            : "Enable scheduler";
-          $("schedToggle").className = sc.enabled ? "btn-danger" : "btn-ok";
-          $("schedToggle").dataset.enabled = sc.enabled ? "1" : "";
-          if (document.activeElement !== $("schedInterval"))
-            $("schedInterval").value = sc.intervalMinutes || 20;
-          $("schedTimes").textContent =
-            `last scan ${sc.lastScanTime ? new Date(sc.lastScanTime).toLocaleTimeString() : "—"} · last alert ${sc.lastAlertTime ? new Date(sc.lastAlertTime).toLocaleTimeString() : "—"}`;
-        }
-        if (t.usingFallbackData)
-          showError(
-            "TopstepX market data unavailable — scans are using SIMULATED data. Fix the connection (Auth test).",
-          );
-        if (
-          s.notifications &&
-          s.notifications.smsEnabled &&
-          s.notifications.smsMissing &&
-          s.notifications.smsMissing.length
-        )
-          showError(
-            "SMS not configured — missing: " +
-              s.notifications.smsMissing.join(", "),
-          );
-        if (
-          s.notifications &&
-          !s.notifications.telegramEnabled &&
-          s.notifications.telegramMissing &&
-          s.notifications.telegramMissing.length
-        )
-          showError(
-            "Telegram not active — missing/unset: " +
-              s.notifications.telegramMissing.join(", ") +
-              " (use 'Telegram chat ID' for details).",
-          );
-        if (s.ai && s.ai.status === "offline")
-          showError(
-            "AI assistant OFFLINE — set ANTHROPIC_API_KEY (and OPENAI_API_KEY for consensus). /ask and AI reasoning won't work until then.",
-          );
-        else if (s.ai && s.ai.lastError)
-          showError(
-            "AI assistant last error: " + String(s.ai.lastError).slice(0, 80),
-          );
-        $("account").innerHTML = `
-          <div class="card"><h2>Account</h2><div>${a ? a.name : "—"}</div></div>
-          <div class="card"><h2>Balance</h2><div class="big">${a ? "$" + a.balance.toLocaleString() : "—"}</div></div>
-          <div class="card"><h2>Day P&amp;L</h2><div class="big" style="color:${a && a.dayPnl < 0 ? "var(--block)" : "var(--ok)"}">${a ? "$" + a.dayPnl.toLocaleString() : "—"}</div></div>
-          <div class="card"><h2>Max daily loss</h2><div class="big">$${(s.safety.dailyMaxLoss || (a ? a.rules.maxDailyLoss : 0)).toLocaleString()}</div></div>
-          <div class="card">
-            <h2>TopstepX (${t.mode || "live"})</h2>
-            <div class="big" style="color:${stateColor(t.connectionState)}">${stateLabel(t.connectionState)}</div>
-            <div class="tag">ProjectX auth: <b style="color:${t.authenticated ? "var(--ok)" : "var(--block)"}">${t.authenticated ? "connected" : "failed"}</b> · TopstepX account: <b style="color:${t.connected ? "var(--ok)" : "var(--block)"}">${t.connected ? "connected" : "failed"}</b></div>
-            <div class="tag">${t.message || ""}</div>
-            <div class="tag">Account ID ${t.accountId || "—"} · Buying power $${(t.availableBuyingPower || 0).toLocaleString()} · Daily P&amp;L $${(t.dailyPnL || 0).toLocaleString()} · Open positions ${t.openPositions || 0}</div>
-            <div class="tag">Last sync: ${t.lastSyncTime ? new Date(t.lastSyncTime).toLocaleTimeString() : "never"}</div>
-            <div class="tag">Claude analysis: <b style="color:${claudeOn ? "var(--ok)" : "var(--warn)"}">${claudeOn ? "enabled" : "disabled"}</b> · Alerts: <b>${s.notifications.primaryChannel}</b> · SMS: <b>${s.notifications.smsEnabled ? "enabled" : "disabled"}</b></div>
-            ${s.ai ? `<div class="tag">AI assistant: <b style="color:${s.ai.status === "online" ? "var(--ok)" : "var(--block)"}">${s.ai.status}</b> · model ${s.ai.model} · last ok ${s.ai.lastSuccessAt ? new Date(s.ai.lastSuccessAt).toLocaleTimeString() : "—"}${s.ai.lastError ? ` · last error: ${String(s.ai.lastError).slice(0, 60)}` : ""}</div>` : ""}
-            ${renderLiveChecklist(s.liveTradingChecklist)}
-            <div class="actions" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-              <button style="width:auto;padding:5px 10px" class="${t.connected ? "btn-danger" : "btn-ok"}" onclick="topstepx('${t.connected ? "disconnect" : "connect"}')">${t.connected ? "Disconnect" : "Connect"}</button>
-              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="authTest()">Auth test</button>
-              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="topstepx('sync')">Sync</button>
-              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="testTelegram()">Test Telegram</button>
-              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="telegramDebug()">Telegram chat ID</button>
-              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="readiness()">Readiness report</button>
-              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="sendReadiness()">Send report</button>
-              <button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="resetValidations()">Reset validations</button>
-              ${s.notifications && s.notifications.smsEnabled ? `<button style="width:auto;padding:5px 10px" class="btn-ghost" onclick="testSms()">Test SMS</button>` : ""}
-            </div>
-          </div>`;
-        loadRecs().catch((e) => showError("recs: " + e.message));
-        loadPositions().catch((e) => showError("positions: " + e.message));
-        loadAudit().catch(() => {});
-        loadMemory().catch(() => {});
-      }
+  <script>
+  (() => {
+    'use strict';
 
-      async function loadMemory() {
-        const m = await api("/api/memory").then(j);
-        const o = m.overall || {};
-        if (!o.trades) {
-          $("memory").innerHTML =
-            '<div class="tag">No closed trades recorded yet. As trades close, Avrrio learns your win rates by setup, side, and time of day.</div>';
-          return;
-        }
-        const wr = (s) =>
-          s.winRate == null ? "n/a" : Math.round(s.winRate * 100) + "%";
-        const setups = (m.bySetup || [])
-          .filter((s) => s.trades > 0)
-          .map(
-            (s) =>
-              `<tr><td>${s.key}</td><td>${wr(s)}</td><td>${s.wins + s.losses}</td><td>${s.netPnl >= 0 ? "+" : ""}$${s.netPnl}</td></tr>`,
-          )
-          .join("");
-        const insights = (m.insights || [])
-          .map((i) => `<li>${i}</li>`)
-          .join("");
-        $("memory").innerHTML =
-          `<div class="tag">Overall: <b>${o.trades}</b> trades · <b>${wr(o)}</b> win · net ${o.netPnl >= 0 ? "+" : ""}$${o.netPnl}</div>` +
-          (setups
-            ? `<table style="margin-top:8px"><thead><tr><th>Setup</th><th>Win rate</th><th>n</th><th>Net</th></tr></thead><tbody>${setups}</tbody></table>`
-            : "") +
-          (insights ? `<ul style="margin-top:8px">${insights}</ul>` : "");
-      }
+    // ── STATE ─────────────────────────────────────────────
+    let token = sessionStorage.getItem('avrrio_tok') || '';
+    let scanData = [];
+    let scanFilter = 'all';
+    let approvalsData = [];
+    let chartBars = [];
+    let chartSymbol = 'NQ';
+    let perfData = [];
+    let activeAccount = 'topstep';
+    let statusData = {};
 
-      window.topstepx = async (action) => {
-        const r = await api("/api/topstepx/" + action, {
-          method: action === "status" ? "GET" : "POST",
-        })
-          .then(j)
-          .catch((e) => ({ error: e.message }));
-        if (r.error) showError("TopstepX " + action + ": " + r.error);
-        refresh();
-      };
-      window.testSms = async () => {
-        const r = await api("/api/alerts/sms/test", { method: "POST" })
-          .then(j)
-          .catch((e) => ({ ok: false, info: e.message }));
-        alert(r.ok ? "Test SMS sent." : "SMS not sent: " + (r.info || "error"));
-      };
-      window.testTelegram = async () => {
-        const r = await api("/api/alerts/telegram/test", { method: "POST" })
-          .then(j)
-          .catch((e) => ({ ok: false, info: e.message }));
-        if (r.ok) {
-          alert("Test Telegram sent — check your chat.");
-          refresh();
-          return;
-        }
-        const diag = [];
-        if (r.httpStatus != null) diag.push("HTTP " + r.httpStatus);
-        if (r.errorCode != null) diag.push("error_code " + r.errorCode);
-        if (r.description) diag.push(r.description);
-        alert(
-          "Telegram not sent: " +
-            (r.info || "error") +
-            (diag.length ? "\n\n" + diag.join(" · ") : ""),
-        );
-        refresh();
-      };
-      function readinessText(r) {
-        const yn = (b) => (b ? "✅" : "⚠️");
-        return [
-          "📋 LIVE-TRADING READINESS",
-          `${yn(r.projectxAuth)} ProjectX auth (token + account)`,
-          `${yn(r.accountSync.connected)} Account sync — ID ${r.accountSync.accountId || "—"} · BP $${(r.accountSync.buyingPower || 0).toLocaleString()} · Day P&L $${(r.accountSync.dailyPnL || 0).toLocaleString()}`,
-          `${yn(r.telegram)} Telegram alert test`,
-          `${yn(r.emergencyStop)} Emergency Stop tested`,
-          `${yn(r.riskLimits.dailyLoss)} Max daily loss configured`,
-          `${yn(r.riskLimits.positionSize)} Max position size configured`,
-          `${yn(r.paperApproval)} Paper approval workflow`,
-          "",
-          `Score: ${r.passed}/${r.total} (${r.scorePct}%)`,
-          `Live trading: ${r.liveTradingEnabled ? "ENABLED" : "disabled"} · Overall: ${r.ready ? "READY" : "NOT READY"}`,
-          r.blockers && r.blockers.length
-            ? "Blockers: " + r.blockers.join("; ")
-            : "No blockers remaining.",
-        ].join("\n");
-      }
-      window.readiness = async () => {
-        const r = await api("/api/readiness")
-          .then(j)
-          .catch((e) => ({ error: e.message }));
-        if (r.error) {
-          showError("readiness: " + r.error);
-          return;
-        }
-        alert(readinessText(r));
-      };
-      window.sendReadiness = async () => {
-        const r = await api("/api/readiness/send", { method: "POST" })
-          .then(j)
-          .catch((e) => ({ error: e.message }));
-        if (r.error) {
-          showError("readiness send: " + r.error);
-          return;
-        }
-        alert("Readiness report sent to Telegram.\n\n" + readinessText(r));
-      };
-      window.resetValidations = async () => {
-        if (
-          !confirm(
-            "Reset Telegram/Emergency Stop/paper-approval validations? They will need re-testing before live trading can be enabled.",
-          )
-        )
-          return;
-        await api("/api/safety/reset", { method: "POST" })
-          .then(j)
-          .catch((e) => showError("reset: " + e.message));
-        refresh();
-      };
-      window.telegramDebug = async () => {
-        const r = await api("/api/telegram/debug")
-          .then(j)
-          .catch((e) => ({ ok: false, info: e.message, chatIds: [] }));
-        const lines = [(r.ok ? "✅ " : "⚠️ ") + r.info];
-        if (r.presence) {
-          lines.push("", "Env presence:");
-          for (const [k, v] of Object.entries(r.presence))
-            lines.push(`  ${k}: ${v}`);
-        }
-        if (r.missing && r.missing.length)
-          lines.push("", "Missing/unset: " + r.missing.join(", "));
-        if (r.chatIds && r.chatIds.length)
-          lines.push("", "chat_id(s): " + r.chatIds.join(", "));
-        alert(lines.join("\n"));
-      };
-      window.authTest = async () => {
-        const r = await api("/api/topstepx/auth-test", { method: "POST" })
-          .then(j)
-          .catch((e) => ({
-            ok: false,
-            message: e.message,
-            present: {},
-            missing: [],
-          }));
-        renderAuthPanel(r);
-        const lines = [
-          (r.ok ? "✅ " : "⚠️ ") + r.message,
-          "",
-          "Stage: " +
-            (r.stage || "n/a") +
-            (r.httpStatus != null ? " (HTTP " + r.httpStatus + ")" : ""),
-          "Endpoint: " + (r.endpoint || "n/a"),
-          "Auth method: " + (r.authMethod || "n/a"),
-          r.missing && r.missing.length
-            ? "Missing: " + r.missing.join(", ")
-            : "Missing: none",
-          "",
-          "Env presence:",
-          ...Object.entries(r.present || {}).map(([k, v]) => `  ${k}: ${v}`),
-        ];
-        alert(lines.join("\n"));
-        refresh();
-      };
-      function yesNo(v) {
-        return v ? "yes" : "no";
-      }
-      function renderAuthPanel(r) {
-        const projectxPass = !!r.tokenReceived;
-        const ok = projectxPass ? "var(--ok)" : "var(--block)";
-        $("authPanel").innerHTML = `
-          <h2>Safe Auth Test</h2>
-          <div class="big" style="color:${ok}">ProjectX auth: ${projectxPass ? "pass" : "fail"}</div>
-          <div class="tag">Token received: <b>${yesNo(r.tokenReceived)}</b> · Account found: <b>${yesNo(r.accountFound)}</b></div>
-          <div class="tag">Account ID: <b>${r.accountId || "—"}</b> · Account name: <b>${r.accountName || "—"}</b></div>
-          <div class="tag">Stage: ${r.stage || "n/a"} · HTTP: ${r.httpStatus == null ? "—" : r.httpStatus}</div>
-          <div class="tag">Last error: ${r.lastError || r.message || "—"}</div>
-          <div class="tag">Missing: ${r.missing && r.missing.length ? r.missing.join(", ") : "none"}</div>`;
-      }
-      function stateLabel(st) {
-        return (
-          {
-            connected: "Connected",
-            demo: "Demo (no creds)",
-            missing_credentials: "Missing credentials",
-            invalid_credentials: "Invalid credentials",
-            token_not_returned: "Token not returned",
-            disconnected: "Not connected",
-          }[st] || "Not connected"
-        );
-      }
-      function stateColor(st) {
-        if (st === "connected" || st === "demo") return "var(--ok)";
-        if (st === "disconnected") return "var(--muted)";
-        return "var(--block)";
-      }
-      function renderLiveChecklist(c) {
-        if (!c) return "";
-        const rows = [
-          ["ProjectX auth", c.projectxAuth],
-          ["Token received", c.tokenReceived],
-          ["Account found", c.accountFound],
-          ["Telegram test", c.telegramTestPassed],
-          ["Emergency Stop tested", c.emergencyStopTested],
-          ["Max daily loss configured", c.maxDailyLossConfigured],
-          ["Max position size configured", c.maxPositionSizeConfigured],
-          ["Paper approval test", c.paperApprovalTestPassed],
-        ]
-          .map(([label, ok]) => `${ok ? "✅" : "⚠️"} ${label}`)
-          .join(" · ");
-        return `<div class="tag">Live checklist: ${rows}</div><div class="tag">Live status: <b style="color:${c.ready ? "var(--ok)" : "var(--warn)"}">${c.ready ? "ready to enable" : "locked"}</b>${c.blockers && c.blockers.length ? " — " + c.blockers.join("; ") : ""}</div>`;
-      }
-      $("tradeModeBtn").addEventListener("click", async () => {
-        const goLive = $("tradeModeBtn").dataset.live !== "1";
-        if (
-          goLive &&
-          !confirm(
-            "Enable live trading only after all checks pass? Approved trades may be sent for real.",
-          )
-        )
-          return;
-        const r = await api("/api/settings", {
-          method: "POST",
-          body: JSON.stringify({ liveTrading: goLive }),
-        })
-          .then(j)
-          .catch((e) => ({ error: e.message }));
-        if (r.error) showError("toggle: " + r.error);
-        refresh();
-      });
-      $("modeSelect").addEventListener("change", async () => {
-        const mode = $("modeSelect").value;
-        if (
-          mode === "full_auto" &&
-          !confirm(
-            "Switch to FULL AUTO? Avrrio may auto-execute trades when every safety gate passes.",
-          )
-        ) {
-          refresh();
-          return;
-        }
-        await api("/api/mode", {
-          method: "POST",
-          body: JSON.stringify({ mode }),
-        })
-          .then(j)
-          .catch((e) => showError("mode: " + e.message));
-        refresh();
-      });
+    // ── LOGIN ─────────────────────────────────────────────
+    const loginOverlay = document.getElementById('login-overlay');
+    const pwInput = document.getElementById('pw-input');
+    const pwBtn = document.getElementById('pw-btn');
+    const loginErr = document.getElementById('login-err');
 
-      function orderTypeLabel(orderType) {
-        return (
-          { limit: "Limit", stop_market: "Stop Market", market: "Market" }[
-            orderType
-          ] ?? orderType
-        );
-      }
-
-      async function loadRecs() {
-        const recs = await api("/api/recommendations").then(j);
-        $("recs").innerHTML =
-          recs
-            .slice()
-            .reverse()
-            .map((r) => {
-              const viol = r.violations
-                .map(
-                  (v) =>
-                    `<li class="v-${v.severity}">[${v.severity}] ${v.message}</li>`,
-                )
-                .join("");
-              const ops = r.consensus.opinions
-                .map(
-                  (o) =>
-                    `${o.provider}: ${o.recommendation}${o.available ? " (" + (o.confidence * 100).toFixed(0) + "%)" : " —"}`,
-                )
-                .join(" · ");
-              const canAct = r.status === "pending";
-              return `<div class="rec">
-              <div><b>${r.symbol} ${r.side.toUpperCase()} ×${r.size}</b> <span class="pill ${r.status}">${r.status}</span> ${r.setupName ? '<span class="tag">' + r.setupName + "</span>" : ""}</div>
-              <div class="tag">Entry ${r.entry} · Stop ${r.stopLoss} · Target ${r.target} · Risk $${r.riskAmount.toFixed(0)} · R:R ${r.rewardRiskRatio.toFixed(2)}</div>
-              <div class="tag">Order Type: <b>${orderTypeLabel(r.orderType)}</b> — ${r.orderTypeRationale}</div>
-              <div class="tag">Consensus: <b>${r.consensus.recommendation}</b> (${r.consensus.agreement}/${r.consensus.available} agree, ${(r.consensus.confidence * 100).toFixed(0)}%) · ${ops}</div>
-              <div class="tag">News: ${r.news.blocked ? '<span class="v-block">' + r.news.reason + "</span>" : "clear"} · Auto-eligible: ${r.autoEligible ? "yes" : "no"}${r.expiresAt ? " · valid until " + new Date(r.expiresAt).toLocaleTimeString() : ""}</div>
-              ${r.grade ? `<div class="tag">Confidence: <b>${r.grade.confidence}%</b> · Grade: <b>${r.grade.grade}</b> · Trend ${Math.round(r.grade.breakdown.trend)} · Momentum ${Math.round(r.grade.breakdown.momentum)} · Volume ${Math.round(r.grade.breakdown.volume)} · Structure ${Math.round(r.grade.breakdown.structure)} · Risk ${r.grade.riskApproved ? "Approved" : "Blocked"}</div>` : ""}
-              ${viol ? "<ul>" + viol + "</ul>" : ""}
-              ${r.orderResult ? '<div class="tag">Order: ' + r.orderResult.orderId + (r.orderResult.paper ? " (paper)" : " (LIVE)") + "</div>" : ""}
-              ${
-                canAct
-                  ? `<div class="actions">
-                  <button class="btn-ok" onclick="approve('${r.id}','immediate')">Approve now</button>
-                  <button class="btn-primary" onclick="approve('${r.id}','pre-approved')">Pre-approve (wait for entry)</button>
-                  <button class="btn-danger" onclick="reject('${r.id}')">Reject</button>
-                </div>`
-                  : ""
-              }
-              <div class="chat" id="chat-${r.id}">
-                <div class="tag" style="margin-top:8px">💬 Ask Avrrio about this trade <span class="tag" style="color:var(--muted)">(advisory only — never trades)</span></div>
-                <div class="chatlog" id="chatlog-${r.id}"></div>
-                <div class="chat-row">
-                  <input id="chatin-${r.id}" placeholder="Why not buy now? Where should I enter?" onkeydown="if(event.key==='Enter')discuss('${r.id}')">
-                  <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="discuss('${r.id}')">Ask</button>
-                </div>
-                <div class="chat-row">
-                  <input id="whatifin-${r.id}" placeholder="What if I move my stop to ${r.stopLoss}? Only one contract?" onkeydown="if(event.key==='Enter')whatif('${r.id}')">
-                  <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="whatif('${r.id}')">What if?</button>
-                </div>
-                <div class="chat-row">
-                  <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="debate('${r.id}')">⚖️ Debate (Bull vs Bear)</button>
-                  <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="coach('${r.id}')">🧑‍🏫 Coach review</button>
-                  <button class="btn-ghost" style="width:auto;padding:6px 12px" onclick="memcheck('${r.id}')">🧠 Memory check</button>
-                </div>
-              </div>
-            </div>`;
-            })
-            .join("") || '<div class="tag">No recommendations yet.</div>';
-      }
-
-      function managementEmoji(action) {
-        return (
-          { hold: "🟢", tighten_stop: "🟡", take_partial: "🟠", exit: "🔴" }[
-            action
-          ] ?? "⚪"
-        );
-      }
-      function managementLabel(action) {
-        return (
-          {
-            hold: "Hold",
-            tighten_stop: "Tighten Stop",
-            take_partial: "Take Partial Profit",
-            exit: "Exit Position",
-          }[action] ?? "—"
-        );
-      }
-      async function loadPositions() {
-        const positions = await api("/api/positions/open").then(j);
-        $("positions").innerHTML =
-          positions
-            .map(
-              (r) => `<div class="rec">
-              <div><b>${r.symbol} ${r.side.toUpperCase()} ×${r.size}</b> <span class="pill ${r.status}">${r.status}</span></div>
-              <div class="tag">Entry ${r.entry} · Stop ${r.stopLoss} · Target ${r.target}</div>
-              ${r.lastManagementAction ? `<div class="tag">${managementEmoji(r.lastManagementAction)} <b>${managementLabel(r.lastManagementAction)}</b></div>` : '<div class="tag">Awaiting first management review…</div>'}
-              <div class="actions">
-                <button class="btn-ghost" onclick="closePosition('${r.id}')">Mark closed</button>
-              </div>
-            </div>`,
-            )
-            .join("") || '<div class="tag">No open positions.</div>';
-      }
-      window.closePosition = async (id) => {
-        if (
-          !confirm(
-            "Mark this position as closed? This stops further management alerts.",
-          )
-        )
-          return;
-        await api(`/api/positions/${id}/close`, { method: "POST" })
-          .then(j)
-          .catch((e) => showError("close: " + e.message));
-        refresh();
-      };
-
-      async function loadAudit() {
-        const rows = await api("/api/audit").then(j);
-        $("audit").querySelector("tbody").innerHTML = rows
-          .map(
-            (e) =>
-              `<tr><td>${new Date(e.timestamp).toLocaleTimeString()}</td><td>${e.type}</td><td>${e.actor}</td><td class="tag">${JSON.stringify(e.details)}</td></tr>`,
-          )
-          .join("");
-      }
-
-      let SYMBOLS = [];
-      async function loadSymbols() {
-        try {
-          SYMBOLS = await api("/api/symbols").then(j);
-          populatePicker();
-          updateNote();
-        } catch (e) {
-          showError("symbols: " + e.message);
-        }
-      }
-      function populatePicker() {
-        const cls = $("assetClass").value;
-        const list = SYMBOLS.filter((s) => !cls || s.assetClass === cls);
-        $("symbolPicker").innerHTML =
-          '<option value="">— pick —</option>' +
-          list
-            .map(
-              (s) =>
-                `<option value="${s.symbol}">${s.symbol} — ${s.name}${s.tradable ? "" : " [watchlist]"}</option>`,
-            )
-            .join("");
-      }
-      function updateNote() {
-        const sym = ($("symbol").value || "").toUpperCase();
-        const info = SYMBOLS.find((s) => s.symbol === sym);
-        const note = $("tradeNote");
-        if (info && info.tradable) {
-          note.textContent = "✅ Tradable (futures)";
-          note.style.color = "var(--ok)";
-        } else if (info) {
-          note.textContent = "👁 Watchlist only — analysis, not tradable";
-          note.style.color = "var(--warn)";
-        } else {
-          note.textContent = "⚠ Manual symbol — not tradable";
-          note.style.color = "var(--warn)";
-        }
-      }
-      $("assetClass").addEventListener("change", populatePicker);
-      $("symbolPicker").addEventListener("change", () => {
-        if ($("symbolPicker").value) {
-          $("symbol").value = $("symbolPicker").value;
-          updateNote();
-        }
-      });
-      $("symbol").addEventListener("input", updateNote);
-
-      async function scan() {
-        const classes = [
-          $("cFut").checked ? "futures" : "",
-          $("cStk").checked ? "stocks" : "",
-          $("cCry").checked ? "crypto" : "",
-        ]
-          .filter(Boolean)
-          .join(",");
-        // Staged progress so "Scan now" never just hangs silently.
-        const stages = [
-          "Connecting to backend",
-          "Scanning Futures",
-          "Scanning Stocks",
-          "Scanning Crypto",
-          "Calculating Avrrio Score",
-          "Generating opportunities",
-        ];
-        let si = 0;
-        $("scan").innerHTML =
-          `<div class="tag" id="scanStage">⏳ ${stages[0]}…</div>`;
-        const timer = setInterval(() => {
-          si = Math.min(si + 1, stages.length - 1);
-          const el = $("scanStage");
-          if (el) el.textContent = `⏳ ${stages[si]}…`;
-        }, 350);
-        let rows;
-        try {
-          rows = await api(`/api/scan?limit=8&classes=${classes}`).then(j);
-        } catch (e) {
-          clearInterval(timer);
-          $("scan").innerHTML =
-            `<div class="v-block">Scan failed: ${e.message}</div>`;
-          return;
-        }
-        clearInterval(timer);
-        $("scan").innerHTML =
-          rows
-            .map((r, i) => {
-              const color =
-                r.score >= 80
-                  ? "var(--ok)"
-                  : r.score >= 60
-                    ? "var(--warn)"
-                    : "var(--muted)";
-              return `<div class="rec">
-            <div><b>${i + 1}. ${r.symbol}</b> <span class="tag">${r.name}</span> <span class="pill" style="border-color:${color};color:${color}">Score ${r.score}/100</span>
-              <span class="tag">${r.direction} · ${(r.confidence * 100).toFixed(0)}%${r.tradable ? "" : " · watchlist"}</span></div>
-            <div class="tag">${r.reasons.map((x) => "✓ " + x).join("  ")}</div>
-            <div class="tag">Trend ${r.components.trend | 0} · Vol ${r.components.volume | 0} · News ${r.components.news | 0} · Mom ${r.components.momentum | 0} · Risk ${r.components.risk | 0}</div>
-            ${r.tradable ? `<div class="actions"><button class="btn-ghost" style="width:auto;padding:6px 14px" onclick="useSymbol('${r.symbol}','${r.assetClass}')">Use in propose ↓</button></div>` : ""}
-          </div>`;
-            })
-            .join("") || '<div class="tag">No results.</div>';
-      }
-      async function rankMarkets() {
-        $("rank").innerHTML = '<div class="tag">⏳ Ranking every market…</div>';
-        let rows;
-        try {
-          rows = await api("/api/rank").then(j);
-        } catch (e) {
-          $("rank").innerHTML =
-            `<div class="v-block">Rank failed: ${e.message}</div>`;
-          return;
-        }
-        $("rank").innerHTML =
-          rows
-            .map((r) => {
-              const color = r.qualifies
-                ? "var(--ok)"
-                : r.score >= 60
-                  ? "var(--warn)"
-                  : "var(--muted)";
-              const dir = r.side ? r.side.toUpperCase() : r.direction;
-              const rr =
-                r.rewardRisk != null
-                  ? ` · R:R ${r.rewardRisk.toFixed(2)}:1`
-                  : "";
-              return `<div class="rec">
-            <div><b>${r.rank}. ${r.symbol}</b> <span class="tag">${r.name}</span> <span class="pill" style="border-color:${color};color:${color}">${r.qualifies ? "✅ " : ""}Score ${r.score}/100</span>
-              <span class="tag">${dir}${rr}${r.tradable ? "" : " · watchlist"}</span></div>
-            <div class="tag">${r.reason}</div>
-          </div>`;
-            })
-            .join("") || '<div class="tag">No results.</div>';
-      }
-      $("rankBtn").addEventListener("click", rankMarkets);
-      window.useSymbol = (sym, cls) => {
-        $("assetClass").value = cls;
-        populatePicker();
-        $("symbol").value = sym;
-        $("symbolPicker").value = sym;
-        updateNote();
-        document
-          .getElementById("symbol")
-          .scrollIntoView({ behavior: "smooth", block: "center" });
-      };
-      $("schedToggle").addEventListener("click", async () => {
-        const enable = $("schedToggle").dataset.enabled !== "1";
-        const intervalMinutes = Number($("schedInterval").value) || 20;
-        await api("/api/scheduler/config", {
-          method: "POST",
-          body: JSON.stringify({ enabled: enable, intervalMinutes }),
-        })
-          .then(j)
-          .catch((e) => showError("scheduler: " + e.message));
-        refresh();
-      });
-      $("scanBtn").addEventListener("click", scan);
-      $("cycleBtn").addEventListener("click", async () => {
-        $("cycleBtn").textContent = "Running…";
-        const r = await api("/api/scheduler/run", { method: "POST" })
-          .then(j)
-          .catch((e) => ({ error: e.message }));
-        $("cycleBtn").textContent = "Run scan cycle (alert worthy)";
-        if (r.error) {
-          showError("scan cycle: " + r.error);
-          return;
-        }
-        alert(
-          `Scanned ${r.scanned}, qualifying ${r.qualifying}, alerted ${r.alerted}` +
-            (r.refs && r.refs.length
-              ? "\n" + r.refs.join(", ")
-              : "\nNo qualifying setups (nothing sent)."),
-        );
-        refresh();
-      });
-
-      window.approve = async (id, mode, override) => {
-        const label =
-          mode === "pre-approved"
-            ? "Pre-approve this trade? It will execute only when the entry is reached and all checks still pass."
-            : "Approve and place this trade now?";
-        if (!override && !confirm(label)) return;
-        const r = await api(`/api/recommendations/${id}/approve`, {
-          method: "POST",
-          body: JSON.stringify({ mode, override: !!override }),
-        }).then(j);
-        if (r && r.overrideRequired) {
-          const c = r.consensus || {};
-          const ok = confirm(
-            `⚠️ AI consensus does NOT support this trade — recommendation "${c.recommendation}" (agreement ${c.agreement}/${c.available}).\n\nApprove anyway (override the AI)?`,
-          );
-          if (!ok) {
-            refresh();
-            return;
+    function tryLogin() {
+      const pw = pwInput.value.trim();
+      if (!pw) return;
+      fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (d.token) {
+            token = d.token;
+            sessionStorage.setItem('avrrio_tok', token);
+            loginOverlay.classList.add('hidden');
+            initDashboard();
+          } else {
+            loginErr.textContent = d.error || 'Invalid password';
           }
-          return window.approve(id, mode, true); // re-submit with explicit override
-        }
-        if (r.error) alert("Error: " + r.error);
-        refresh();
-      };
-      window.reject = async (id) => {
-        await api(`/api/recommendations/${id}/reject`, {
-          method: "POST",
-          body: JSON.stringify({ reason: "operator rejected" }),
-        });
-        refresh();
-      };
+        })
+        .catch(() => { loginErr.textContent = 'Server error'; });
+    }
+    pwBtn.addEventListener('click', tryLogin);
+    pwInput.addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
 
-      function chatAppend(id, who, text) {
-        const log = $(`chatlog-${id}`);
-        if (!log) return;
-        const div = document.createElement("div");
-        div.className = "chatmsg " + who;
-        div.innerHTML = `<b>${who === "you" ? "You" : "Avrrio"}:</b> ${String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>")}`;
-        log.appendChild(div);
-        log.scrollTop = log.scrollHeight;
-      }
-      window.discuss = async (id) => {
-        const input = $(`chatin-${id}`);
-        const q = (input.value || "").trim();
-        if (!q) return;
-        input.value = "";
-        chatAppend(id, "you", q);
-        chatAppend(id, "ai", "…thinking");
-        try {
-          const r = await api(`/api/recommendations/${id}/discuss`, {
-            method: "POST",
-            body: JSON.stringify({ question: q }),
-          }).then(j);
-          $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(id, "ai", r.answer || "(no answer)");
-        } catch (e) {
-          $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(id, "ai", "Error: " + e.message);
-        }
-      };
-      window.whatif = async (id) => {
-        const input = $(`whatifin-${id}`);
-        const s = (input.value || "").trim();
-        if (!s) return;
-        input.value = "";
-        chatAppend(id, "you", "What if: " + s);
-        chatAppend(id, "ai", "…recomputing");
-        try {
-          const r = await api(`/api/recommendations/${id}/whatif`, {
-            method: "POST",
-            body: JSON.stringify({ scenario: s }),
-          }).then(j);
-          $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(
-            id,
-            "ai",
-            r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""),
-          );
-        } catch (e) {
-          $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(id, "ai", "Error: " + e.message);
-        }
-      };
-      window.debate = async (id) => {
-        chatAppend(id, "you", "Debate this trade (Bull vs Bear)");
-        chatAppend(id, "ai", "…weighing both sides");
-        try {
-          const r = await api(`/api/recommendations/${id}/debate`, {
-            method: "POST",
-            body: JSON.stringify({}),
-          }).then(j);
-          $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(
-            id,
-            "ai",
-            r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""),
-          );
-        } catch (e) {
-          $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(id, "ai", "Error: " + e.message);
-        }
-      };
-      window.coach = async (id) => {
-        chatAppend(id, "you", "Review this trade (Coach)");
-        chatAppend(id, "ai", "…reviewing against your discipline rules");
-        try {
-          const r = await api(`/api/recommendations/${id}/coach`, {
-            method: "POST",
-            body: JSON.stringify({}),
-          }).then(j);
-          $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(
-            id,
-            "ai",
-            r.summary + (r.interpretation ? "\n\n🧠 " + r.interpretation : ""),
-          );
-        } catch (e) {
-          $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(id, "ai", "Error: " + e.message);
-        }
-      };
-      window.memcheck = async (id) => {
-        chatAppend(
-          id,
-          "you",
-          "Does this resemble a pattern I've struggled with?",
-        );
-        chatAppend(id, "ai", "…checking your history");
-        try {
-          const r = await api(`/api/recommendations/${id}/memory`, {
-            method: "POST",
-            body: JSON.stringify({}),
-          }).then(j);
-          $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(id, "ai", r.message || "(no memory data)");
-        } catch (e) {
-          $(`chatlog-${id}`).lastChild.remove();
-          chatAppend(id, "ai", "Error: " + e.message);
-        }
-      };
+    function authHeaders() {
+      return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    }
 
-      $("whyBtn").addEventListener("click", async () => {
-        const sym = ($("symbol").value || "").trim().toUpperCase();
-        if (!sym) return;
-        $("whyOut").textContent = "⏳ Checking…";
-        try {
-          const e = await api(`/api/why/${encodeURIComponent(sym)}`).then(j);
-          const lines = [
-            `Score ${e.score}/100 (need ≥ ${e.minScore}) · ${e.direction}${e.side ? " (" + e.side + ")" : ""}`,
-            ...e.componentNotes.map(
-              (n) => `• ${n.label} ${n.value}/100 — ${n.note}`,
-            ),
-          ];
-          if (e.rewardRisk != null) {
-            lines.push(
-              `Reward/Risk ${e.rewardRisk.toFixed(2)}:1 (need ≥ ${e.minRewardRisk}:1)`,
-            );
+    function api(path, opts = {}) {
+      return fetch(path, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } })
+        .then(r => {
+          if (r.status === 401) {
+            token = '';
+            sessionStorage.removeItem('avrrio_tok');
+            loginOverlay.classList.remove('hidden');
+            throw new Error('Session expired');
           }
-          lines.push(
-            e.qualifies
-              ? "✅ Clears every filter right now."
-              : "Blocking: " + e.blockers.join(" "),
-          );
-          $("whyOut").textContent = lines.join("\n");
-        } catch (err) {
-          $("whyOut").textContent = "Error: " + err.message;
-        }
-      });
+          return r.json();
+        });
+    }
 
-      $("proposeBtn").addEventListener("click", async () => {
-        $("proposeErr").textContent = "";
-        const idea = {
-          setupName: $("setupName").value || undefined,
-          symbol: $("symbol").value,
-          side: $("side").value,
-          size: Number($("size").value),
-          entry: Number($("entry").value),
-          stopLoss: Number($("stop").value),
-          target: Number($("target").value),
-        };
-        const r = await api("/api/propose", {
-          method: "POST",
-          body: JSON.stringify(idea),
-        }).then(j);
-        if (r.error) {
-          $("proposeErr").textContent = r.error;
-          return;
-        }
-        refresh();
-      });
+    // ── ET CLOCK ──────────────────────────────────────────
+    function updateClock() {
+      const now = new Date();
+      const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const h = String(et.getHours()).padStart(2, '0');
+      const m = String(et.getMinutes()).padStart(2, '0');
+      const s = String(et.getSeconds()).padStart(2, '0');
+      document.getElementById('et-clock').textContent = `${h}:${m}:${s} ET`;
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
 
-      $("killBtn").addEventListener("click", async () => {
-        const engaged = $("killBtn").dataset.engaged === "1";
-        if (engaged) {
-          await api("/api/kill-switch", {
-            method: "POST",
-            body: JSON.stringify({ engage: false }),
-          });
+    // ── ACCOUNT SELECTOR ──────────────────────────────────
+    document.getElementById('acct-topstep').addEventListener('click', () => switchAccount('topstep'));
+    document.getElementById('acct-coinbase').addEventListener('click', () => switchAccount('coinbase'));
+
+    function switchAccount(acct) {
+      activeAccount = acct;
+      document.getElementById('acct-topstep').classList.toggle('active', acct === 'topstep');
+      document.getElementById('acct-coinbase').classList.toggle('active', acct === 'coinbase');
+      refreshAccountHeader();
+    }
+
+    function refreshAccountHeader() {
+      if (activeAccount === 'topstep') {
+        const bal = statusData.account?.balance;
+        const pnl = statusData.account?.dailyPnl;
+        document.getElementById('hdr-balance').textContent = bal != null ? fmt$(bal) : '$50,000';
+        const pnlEl = document.getElementById('hdr-pnl');
+        pnlEl.textContent = pnl != null ? (pnl >= 0 ? '+' : '') + fmt$(pnl) : '+$0.00';
+        pnlEl.className = 'hdr-value ' + (pnl != null && pnl < 0 ? 'neg' : 'pos');
+      } else {
+        const cb = statusData.coinbase;
+        document.getElementById('hdr-balance').textContent = cb ? fmt$(cb.totalValueUsd || 0) : '—';
+        const pnlEl = document.getElementById('hdr-pnl');
+        const dayPnl = cb?.dayPnlUsd ?? 0;
+        pnlEl.textContent = (dayPnl >= 0 ? '+' : '') + fmt$(dayPnl);
+        pnlEl.className = 'hdr-value ' + (dayPnl < 0 ? 'neg' : 'pos');
+      }
+    }
+
+    // ── NUMBER FORMATTING ─────────────────────────────────
+    function fmt$(n) {
+      if (n == null || isNaN(n)) return '—';
+      return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function fmtPct(n) { return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'; }
+
+    // ── SIDEBAR NAV ───────────────────────────────────────
+    document.getElementById('nav-scan').addEventListener('click', () => openModal('scanner-modal'));
+    document.getElementById('nav-appr').addEventListener('click', () => { openModal('approvals-modal'); loadApprovals(); });
+    document.getElementById('nav-coinbase').addEventListener('click', () => { openModal('coinbase-modal'); loadCoinbaseStatus(); });
+    document.getElementById('nav-warn').addEventListener('click', () => { openModal('warnings-modal'); loadWarningsModal(); });
+
+    function openModal(id) {
+      document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
+      document.getElementById(id).classList.add('open');
+    }
+    ['scanner-close','approvals-close','coinbase-close','warnings-close'].forEach(id => {
+      document.getElementById(id).addEventListener('click', () => {
+        document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
+      });
+    });
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('open'); });
+    });
+
+    // ── SCAN NOW ──────────────────────────────────────────
+    document.getElementById('scan-now-btn').addEventListener('click', runScan);
+
+    function runScan() {
+      const btn = document.getElementById('scan-now-btn');
+      const spinner = document.getElementById('scan-running');
+      btn.style.display = 'none';
+      spinner.style.display = 'inline';
+      document.getElementById('scan-spinner').style.display = '';
+      document.getElementById('scan-spinner').textContent = 'Scanning all markets…';
+
+      api('/api/scan')
+        .then(d => {
+          scanData = d.results || [];
+          renderTop5();
+          renderHeatmap();
+          renderScannerModal();
+        })
+        .catch(e => {
+          if (e.message !== 'Session expired')
+            document.getElementById('scan-spinner').textContent = 'Scan failed — ' + e.message;
+        })
+        .finally(() => {
+          btn.style.display = '';
+          spinner.style.display = 'none';
+        });
+    }
+
+    // ── TOP 5 ─────────────────────────────────────────────
+    function renderTop5() {
+      const el = document.getElementById('top5-list');
+      if (!scanData.length) { el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">No results</div>'; return; }
+      const top = scanData.slice(0, 5);
+      el.innerHTML = top.map((r, i) => {
+        const broker = r.broker || (r.assetClass === 'crypto' ? 'coinbase' : 'topstep');
+        const dirClass = r.direction === 'bullish' ? 'bull' : r.direction === 'bearish' ? 'bear' : '';
+        const dirSym = r.direction === 'bullish' ? '▲' : r.direction === 'bearish' ? '▼' : '↔';
+        return `<div class="opp-row" onclick="selectSymbol('${r.symbol}')">
+          <span class="opp-rank">${i+1}</span>
+          <span class="opp-sym">${r.symbol}</span>
+          <span class="opp-broker ${broker}">${broker === 'coinbase' ? 'CB' : 'TS'}</span>
+          <div class="opp-bar-bg"><div class="opp-bar" style="width:${r.score}%"></div></div>
+          <span class="opp-score">${r.score}</span>
+          <span class="opp-dir ${dirClass}">${dirSym}</span>
+        </div>`;
+      }).join('');
+    }
+
+    // ── HEATMAP ───────────────────────────────────────────
+    function renderHeatmap() {
+      const el = document.getElementById('heatmap-grid');
+      if (!scanData.length) { el.innerHTML = ''; return; }
+      const cells = scanData.slice(0, 18);
+      el.innerHTML = cells.map(r => {
+        const score = r.score;
+        const hue = score >= 70 ? '#00ff88' : score >= 50 ? '#f59e0b' : '#ef4444';
+        const alpha = 0.1 + (score / 100) * 0.5;
+        const bg = hexToRgba(hue, alpha);
+        return `<div class="hm-cell" style="background:${bg};color:${hue}" onclick="selectSymbol('${r.symbol}')">
+          <span>${r.score}</span>
+          <span class="hm-sym">${r.symbol.replace('USD','')}</span>
+        </div>`;
+      }).join('');
+    }
+
+    function hexToRgba(hex, alpha) {
+      const r = parseInt(hex.slice(1,3),16);
+      const g = parseInt(hex.slice(3,5),16);
+      const b = parseInt(hex.slice(5,7),16);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    // ── SCANNER MODAL ─────────────────────────────────────
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        scanFilter = btn.dataset.filter;
+        renderScannerModal();
+      });
+    });
+
+    function renderScannerModal() {
+      const spinner = document.getElementById('scan-spinner');
+      if (!scanData.length) { spinner.style.display=''; spinner.textContent='No scan data yet — click ⚡ Scan Now'; return; }
+      spinner.style.display = 'none';
+      let rows = scanData;
+      if (scanFilter !== 'all') rows = rows.filter(r => r.assetClass === scanFilter);
+      const body = document.getElementById('scanner-body');
+      body.innerHTML = rows.map((r, i) => {
+        const broker = r.broker || (r.assetClass === 'crypto' ? 'coinbase' : 'topstep');
+        const dirSym = r.direction === 'bullish' ? '▲' : r.direction === 'bearish' ? '▼' : '↔';
+        const barColor = r.score >= 85 ? '#00ff88' : r.score >= 65 ? '#f59e0b' : '#64748b';
+        return `<div class="scan-row" onclick="selectSymbol('${r.symbol}');closeModals();">
+          <span class="scan-num">${i+1}</span>
+          <span class="scan-sym">${r.symbol}</span>
+          <span class="scan-name">${r.name}</span>
+          <span class="scan-broker ${broker}">${broker === 'coinbase' ? 'Coinbase' : 'TopstepX'}</span>
+          <div class="scan-bar-bg"><div class="scan-bar" style="width:${r.score}%;background:${barColor}"></div></div>
+          <span class="scan-score" style="color:${barColor}">${r.score}</span>
+          <span class="scan-dir">${dirSym}</span>
+        </div>`;
+      }).join('');
+    }
+
+    window.closeModals = () => document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
+
+    // ── SELECT SYMBOL (load chart + rec) ─────────────────
+    window.selectSymbol = function(sym) {
+      chartSymbol = sym;
+      document.getElementById('chart-symbol').textContent = sym;
+      loadChartData(sym);
+      const scanResult = scanData.find(r => r.symbol === sym);
+      if (scanResult) renderRecCard(scanResult);
+    };
+
+    function loadChartData(sym) {
+      const cbSym = scanData.find(r => r.symbol === sym)?.coinbaseProductId;
+      const endpoint = cbSym
+        ? `/api/coinbase/bars/${encodeURIComponent(cbSym)}`
+        : `/api/market/bars/${sym}`;
+      api(endpoint)
+        .then(d => {
+          chartBars = d.bars || d || [];
+          drawChart();
+          if (chartBars.length) {
+            const last = chartBars[chartBars.length - 1];
+            const first = chartBars[0];
+            const change = first.close ? ((last.close - first.close) / first.close * 100) : 0;
+            document.getElementById('chart-price').textContent = last.close?.toFixed(2) ?? '—';
+            const chEl = document.getElementById('chart-change');
+            chEl.textContent = fmtPct(change);
+            chEl.className = change >= 0 ? 'pos' : 'neg';
+          }
+        })
+        .catch(() => {});
+    }
+
+    // ── CANDLESTICK CHART ─────────────────────────────────
+    function drawChart() {
+      const canvas = document.getElementById('chart-canvas');
+      const dpr = window.devicePixelRatio || 1;
+      const W = canvas.parentElement.clientWidth - 28;
+      const H = 200;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      canvas.style.width = W + 'px';
+      canvas.style.height = H + 'px';
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      if (!chartBars.length) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '12px -apple-system,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No chart data', W/2, H/2);
+        return;
+      }
+
+      const bars = chartBars.slice(-60);
+      const prices = bars.flatMap(b => [b.high, b.low]);
+      const minP = Math.min(...prices);
+      const maxP = Math.max(...prices);
+      const pRange = maxP - minP || 1;
+      const pad = { t: 10, b: 20, l: 8, r: 8 };
+      const cW = W - pad.l - pad.r;
+      const cH = H - pad.t - pad.b;
+
+      const toY = p => pad.t + cH - ((p - minP) / pRange) * cH;
+      const barW = Math.max(2, (cW / bars.length) - 1);
+
+      // Grid
+      ctx.strokeStyle = 'rgba(30,33,64,0.8)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.t + (cH / 4) * i;
+        ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(W - pad.r, y); ctx.stroke();
+        const price = maxP - (pRange / 4) * i;
+        ctx.fillStyle = '#64748b';
+        ctx.font = '9px -apple-system,sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(price.toFixed(price > 1000 ? 0 : 2), W - pad.r + 6, y + 3);
+      }
+
+      // SMA line
+      const smaLen = 20;
+      const smaPoints = [];
+      for (let i = 0; i < bars.length; i++) {
+        if (i < smaLen - 1) { smaPoints.push(null); continue; }
+        const slice = bars.slice(i - smaLen + 1, i + 1);
+        smaPoints.push(slice.reduce((s, b) => s + b.close, 0) / smaLen);
+      }
+      ctx.strokeStyle = 'rgba(139,92,246,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      let smaMoved = false;
+      smaPoints.forEach((p, i) => {
+        if (p == null) return;
+        const x = pad.l + (i + 0.5) * (cW / bars.length);
+        if (!smaMoved) { ctx.moveTo(x, toY(p)); smaMoved = true; }
+        else ctx.lineTo(x, toY(p));
+      });
+      ctx.stroke();
+
+      // Candles
+      bars.forEach((b, i) => {
+        const x = pad.l + i * (cW / bars.length);
+        const cx = x + barW / 2;
+        const up = b.close >= b.open;
+        ctx.strokeStyle = up ? '#00ff88' : '#ef4444';
+        ctx.fillStyle = up ? 'rgba(0,255,136,0.7)' : 'rgba(239,68,68,0.7)';
+        // Wick
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx, toY(b.high));
+        ctx.lineTo(cx, toY(b.low));
+        ctx.stroke();
+        // Body
+        const top = toY(Math.max(b.open, b.close));
+        const bot = toY(Math.min(b.open, b.close));
+        const bodyH = Math.max(1, bot - top);
+        ctx.fillRect(x, top, barW, bodyH);
+      });
+    }
+
+    // ── PERF SPARKLINE ────────────────────────────────────
+    function drawPerf() {
+      const canvas = document.getElementById('perf-canvas');
+      const dpr = window.devicePixelRatio || 1;
+      const W = canvas.parentElement.clientWidth - 28;
+      const H = 80;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      canvas.style.width = W + 'px';
+      canvas.style.height = H + 'px';
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      const data = perfData.length ? perfData : Array.from({length:20}, (_,i) => Math.sin(i*0.4)*30 + 50 + Math.random()*10 - 5);
+      const min = Math.min(...data);
+      const max = Math.max(...data);
+      const range = max - min || 1;
+      const toX = i => (i / (data.length - 1)) * W;
+      const toY = v => H - ((v - min) / range) * (H - 10) - 5;
+
+      const grad = ctx.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, 'rgba(0,255,136,0.3)');
+      grad.addColorStop(1, 'rgba(0,255,136,0)');
+
+      ctx.beginPath();
+      data.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
+      ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+      ctx.fillStyle = grad; ctx.fill();
+
+      ctx.beginPath();
+      data.forEach((v, i) => i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v)));
+      ctx.strokeStyle = '#00ff88'; ctx.lineWidth = 2; ctx.stroke();
+    }
+
+    // ── RECOMMENDATION CARD ───────────────────────────────
+    function renderRecCard(r) {
+      const wrap = document.getElementById('rec-wrap');
+      if (!r) { wrap.innerHTML = '<div id="no-rec">No active recommendation</div>'; updateRing(0); return; }
+
+      updateRing(r.confidence ?? r.score / 100);
+
+      const dirClass = r.direction === 'bullish' ? 'long' : 'short';
+      const dirLabel = r.direction === 'bullish' ? 'LONG' : r.direction === 'bearish' ? 'SHORT' : 'WATCH';
+
+      const c = r.components || {};
+      const scores = [
+        { lbl: 'Trend', val: c.trend ?? 0 },
+        { lbl: 'Volume', val: c.volume ?? 0 },
+        { lbl: 'Momentum', val: c.momentum ?? 0 },
+        { lbl: 'Risk', val: c.risk ?? 0 },
+      ];
+
+      const entry = r.entry ?? '—';
+      const stop = r.stopLoss ?? '—';
+      const target = r.target ?? '—';
+
+      wrap.innerHTML = `<div class="rec-card">
+        <div class="rec-header">
+          <span class="rec-sym">${r.symbol}</span>
+          <span class="rec-dir ${dirClass}">${dirLabel}</span>
+          <span style="margin-left:auto;font-size:20px;font-weight:900;color:var(--purple)">${r.score}</span>
+        </div>
+        <div class="rec-scores">
+          ${scores.map(s => `<div class="rec-score-item">
+            <div class="rec-score-lbl">${s.lbl}</div>
+            <div class="rec-score-bar"><div class="rec-score-fill" style="width:${s.val}%"></div></div>
+            <div class="rec-score-val">${Math.round(s.val)}</div>
+          </div>`).join('')}
+        </div>
+        <div class="rec-levels">
+          <div class="rec-level"><div class="rec-level-lbl">Entry</div><div class="rec-level-val entry">${entry}</div></div>
+          <div class="rec-level"><div class="rec-level-lbl">Stop</div><div class="rec-level-val stop">${stop}</div></div>
+          <div class="rec-level"><div class="rec-level-lbl">Target</div><div class="rec-level-val target">${target}</div></div>
+        </div>
+        <div class="rec-actions">
+          <button class="btn-approve" onclick="approveRec('${r.id ?? r.symbol}')">✓ Approve</button>
+          <button class="btn-reject" onclick="rejectRec('${r.id ?? r.symbol}')">✕ Reject</button>
+        </div>
+      </div>`;
+    }
+
+    function updateRing(conf) {
+      const pct = Math.round(conf * 100);
+      const circ = 2 * Math.PI * 60;
+      const offset = circ - (conf * circ);
+      document.getElementById('conf-ring').setAttribute('stroke-dashoffset', offset.toFixed(1));
+      document.getElementById('conf-pct').textContent = pct + '%';
+      document.getElementById('conf-label').textContent =
+        pct >= 90 ? 'Strong signal' : pct >= 70 ? 'Moderate signal' : pct >= 50 ? 'Weak signal' : 'No active signal';
+    }
+
+    window.approveRec = function(id) {
+      api('/api/queue/approve', { method: 'POST', body: JSON.stringify({ id }) })
+        .then(() => { alert('Trade approved.'); loadApprovals(); })
+        .catch(e => { if (e.message !== 'Session expired') alert('Error: ' + e.message); });
+    };
+    window.rejectRec = function(id) {
+      api('/api/queue/reject', { method: 'POST', body: JSON.stringify({ id }) })
+        .then(() => { document.getElementById('rec-wrap').innerHTML = '<div id="no-rec">Rejected.</div>'; updateRing(0); })
+        .catch(e => { if (e.message !== 'Session expired') alert('Error: ' + e.message); });
+    };
+
+    // ── APPROVALS ─────────────────────────────────────────
+    function loadApprovals() {
+      api('/api/queue').then(d => {
+        approvalsData = d.queue || [];
+        renderApprovals();
+      }).catch(() => {});
+    }
+
+    function renderApprovals() {
+      const body = document.getElementById('approvals-body');
+      if (!approvalsData.length) {
+        body.innerHTML = '<div id="no-approvals">No pending approvals</div>';
+        return;
+      }
+      body.innerHTML = approvalsData.map(item => {
+        const dirClass = item.direction === 'bullish' ? 'long' : 'short';
+        const exp = item.expiresAt ? new Date(item.expiresAt).toLocaleTimeString() : '';
+        return `<div class="appr-row">
+          <div class="appr-top">
+            <span class="appr-sym">${item.symbol}</span>
+            <span class="appr-dir ${dirClass}">${dirClass.toUpperCase()}</span>
+            <span class="appr-score">${item.score ?? '—'}</span>
+            ${exp ? `<span class="appr-exp">Expires ${exp}</span>` : ''}
+          </div>
+          <div class="appr-details">Entry: ${item.entry ?? '—'} · Stop: ${item.stopLoss ?? '—'} · Target: ${item.target ?? '—'}</div>
+          <div class="appr-actions">
+            <button class="btn-approve" onclick="approveRec('${item.id}');loadApprovals()">✓ Approve</button>
+            <button class="btn-reject" onclick="rejectRec('${item.id}');loadApprovals()">✕ Reject</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // ── COINBASE STATUS ───────────────────────────────────
+    function loadCoinbaseStatus() {
+      api('/api/coinbase/status')
+        .then(d => renderCoinbaseStatus(d))
+        .catch(() => {
+          document.getElementById('coinbase-body').innerHTML = '<div style="color:var(--muted)">Coinbase not configured or offline.</div>';
+        });
+    }
+
+    function renderCoinbaseStatus(d) {
+      const body = document.getElementById('coinbase-body');
+      const checks = [
+        { label: 'API Credentials configured', pass: d.credentialsConfigured },
+        { label: 'Authentication successful', pass: d.authOk },
+        { label: 'Trading enabled (COINBASE_TRADING_ENABLED)', pass: d.tradingEnabled, warnIfFail: true },
+        { label: 'Kill switch OFF', pass: !d.killSwitch },
+        { label: 'Demo / offline mode', pass: d.offline, isInfo: true },
+      ];
+      const portfolio = d.portfolio;
+      body.innerHTML = `
+        <div style="margin-bottom:14px">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Readiness Checklist</div>
+          <div class="cb-checklist">
+            ${checks.map(c => {
+              const cls = c.isInfo ? 'warn' : c.pass ? 'pass' : c.warnIfFail ? 'warn' : 'fail';
+              const icon = c.isInfo ? 'ℹ' : c.pass ? '✓' : '✗';
+              return `<div class="cb-check ${cls}"><span class="cb-check-icon">${icon}</span><span>${c.label}</span></div>`;
+            }).join('')}
+          </div>
+        </div>
+        ${portfolio ? `<div style="margin-bottom:14px">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Portfolio</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+            <div><div style="color:var(--muted);font-size:10px">Total Value</div><div style="font-weight:700;color:var(--cyan)">${fmt$(portfolio.totalValueUsd)}</div></div>
+            <div><div style="color:var(--muted);font-size:10px">Day P&L</div><div style="font-weight:700;color:${(portfolio.dayPnlUsd||0)>=0?'var(--green)':'var(--red)'}">${fmt$(portfolio.dayPnlUsd)}</div></div>
+          </div>
+          ${portfolio.accounts ? `<div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+            ${portfolio.accounts.map(a => `<div style="display:flex;gap:8px;font-size:11px;align-items:center">
+              <span style="color:var(--muted);flex:1">${a.currency}</span>
+              <span style="font-weight:700">${a.availableBalance} ${a.currency}</span>
+            </div>`).join('')}
+          </div>` : ''}
+        </div>` : ''}
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">
+          Safety: Max Position ${fmt$(d.safety?.maxPositionUsd)} · Max Risk/Trade ${fmt$(d.safety?.maxRiskPerTradeUsd)} · Max Daily Loss ${fmt$(d.safety?.maxDailyLossUsd)}
+        </div>`;
+    }
+
+    // ── WARNINGS ──────────────────────────────────────────
+    function loadWarningsModal() {
+      api('/api/status').then(d => {
+        const ws = d.warnings || [];
+        const body = document.getElementById('warnings-modal-body');
+        if (!ws.length) { body.innerHTML = '<div style="color:var(--muted);font-size:12px">No warnings.</div>'; return; }
+        body.innerHTML = ws.map(w => `<div class="warn-item"><span class="warn-icon">⚠</span><span>${w}</span></div>`).join('');
+      }).catch(() => {});
+    }
+
+    // ── AI CHAT ───────────────────────────────────────────
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    const chatThinking = document.getElementById('chat-thinking');
+
+    document.getElementById('chat-send').addEventListener('click', sendChat);
+    chatInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+    function sendChat() {
+      const text = chatInput.value.trim();
+      if (!text) return;
+      chatInput.value = '';
+      appendMsg('user', text);
+      chatThinking.style.display = '';
+      api('/api/chat', { method: 'POST', body: JSON.stringify({ message: text }) })
+        .then(d => appendMsg('ai', d.reply || d.message || 'No response'))
+        .catch(e => { if (e.message !== 'Session expired') appendMsg('ai', 'Error: ' + e.message); })
+        .finally(() => { chatThinking.style.display = 'none'; });
+    }
+
+    function appendMsg(who, text) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + who;
+      div.innerHTML = `<div class="msg-who ${who}">${who === 'user' ? 'You' : 'Avrrio AI'}</div><div class="msg-body">${escHtml(text)}</div>`;
+      chatMessages.appendChild(div);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+    }
+
+    // ── POSITIONS ─────────────────────────────────────────
+    function loadPositions() {
+      api('/api/positions').then(d => {
+        const pos = d.positions || [];
+        const el = document.getElementById('positions-list');
+        if (!pos.length) { el.innerHTML = '<div id="no-positions">No open positions</div>'; return; }
+        el.innerHTML = pos.map(p => {
+          const side = p.side?.toLowerCase() === 'buy' || p.size > 0 ? 'long' : 'short';
+          const pnl = p.unrealizedPnl ?? p.pnl ?? 0;
+          return `<div class="pos-row">
+            <span class="pos-side ${side}">${side}</span>
+            <span class="pos-sym">${p.symbol}</span>
+            <span class="pos-qty">${Math.abs(p.size ?? 1)} ct</span>
+            <span class="pos-pnl ${pnl >= 0 ? 'pos' : 'neg'}">${pnl >= 0 ? '+' : ''}${fmt$(pnl)}</span>
+            <button class="pos-close" onclick="closePosition('${p.symbol}')">✕</button>
+          </div>`;
+        }).join('');
+      }).catch(() => {});
+    }
+
+    window.closePosition = function(sym) {
+      if (!confirm('Close all ' + sym + ' positions?')) return;
+      api('/api/orders/close', { method: 'POST', body: JSON.stringify({ symbol: sym }) })
+        .then(() => loadPositions())
+        .catch(e => { if (e.message !== 'Session expired') alert('Error: ' + e.message); });
+    };
+
+    // ── MAIN STATUS POLL ──────────────────────────────────
+    function loadStatus() {
+      api('/api/status').then(d => {
+        statusData = d;
+        refreshAccountHeader();
+
+        // Risk
+        const s = d.safety || {};
+        document.getElementById('risk-daily-loss').textContent = fmt$(Math.abs(s.dailyLoss ?? 0));
+        document.getElementById('risk-max-loss').textContent = s.dailyMaxLoss ? fmt$(s.dailyMaxLoss) : '—';
+        document.getElementById('risk-trades').textContent = `${s.tradesToday ?? 0} / ${s.maxTradesPerDay ?? '—'}`;
+
+        // Goal progress
+        const goal = d.account?.dailyGoal ?? 0;
+        const pnl = d.account?.dailyPnl ?? 0;
+        const pct = goal > 0 ? Math.min(100, (pnl / goal) * 100) : 0;
+        document.getElementById('goal-pct').textContent = Math.round(pct) + '%';
+        document.getElementById('goal-bar').style.width = Math.max(0, pct) + '%';
+
+        // Risk remaining
+        const maxLoss = s.dailyMaxLoss ?? 0;
+        const loss = Math.abs(s.dailyLoss ?? 0);
+        if (maxLoss > 0) {
+          document.getElementById('hdr-risk').textContent = fmt$(maxLoss - loss);
+        }
+
+        // AI status badges
+        const ai = d.ai || {};
+        setBadge('ai-claude', ai.claudeEnabled ? 'ok' : 'off', ai.claudeEnabled ? 'ONLINE' : 'OFF');
+        setBadge('ai-openai', ai.openaiEnabled ? 'ok' : 'off', ai.openaiEnabled ? 'ONLINE' : 'OFF');
+        setBadge('ai-live', d.execution?.liveTradingEnabled ? 'warn' : 'off',
+          d.execution?.liveTradingEnabled ? 'LIVE' : 'PAPER');
+        setBadge('ai-kill', d.safety?.killSwitch ? 'warn' : 'ok',
+          d.safety?.killSwitch ? 'ON ⚠' : 'OFF');
+        setBadge('ai-mode', 'live', (d.execution?.tradingMode ?? '—').replace('_',' ').toUpperCase());
+        const cbEnabled = d.coinbase?.tradingEnabled;
+        setBadge('ai-coinbase', cbEnabled ? 'ok' : 'off', cbEnabled ? 'LIVE' : 'PAPER');
+
+        // Inline warnings
+        const ws = d.warnings || [];
+        const wEl = document.getElementById('warnings-list');
+        if (ws.length) {
+          wEl.innerHTML = ws.slice(0,3).map(w => `<div class="warn-item"><span class="warn-icon">⚠</span><span>${escHtml(w)}</span></div>`).join('');
         } else {
-          if (!confirm("Engage Emergency Stop? All trading will be blocked."))
-            return;
-          await api("/api/kill-switch", {
-            method: "POST",
-            body: JSON.stringify({
-              engage: true,
-              reason: "operator emergency stop",
-            }),
-          });
+          wEl.innerHTML = '<div style="color:var(--muted);font-size:12px">No warnings.</div>';
         }
-        refresh();
-      });
 
-      $("loginBtn").addEventListener("click", login);
-      $("password").addEventListener("keydown", (e) => {
-        if (e.key === "Enter") login();
-      });
-    </script>
+        // Engine label
+        document.getElementById('engine-label').textContent =
+          d.safety?.killSwitch ? 'Kill Switch ON' : 'Online';
+      }).catch(() => {});
+    }
+
+    function setBadge(id, cls, text) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.className = 'ai-badge ' + cls;
+      el.textContent = text;
+    }
+
+    // ── INIT ──────────────────────────────────────────────
+    function initDashboard() {
+      loadStatus();
+      loadPositions();
+      loadChartData('NQ');
+      drawPerf();
+      setInterval(loadStatus, 30000);
+      setInterval(loadPositions, 15000);
+      setInterval(drawPerf, 60000);
+    }
+
+    // ── AUTO-START if token present ────────────────────────
+    if (token) {
+      loginOverlay.classList.add('hidden');
+      initDashboard();
+    }
+
+    // ── RESIZE ────────────────────────────────────────────
+    window.addEventListener('resize', () => { drawChart(); drawPerf(); });
+  })();
+  </script>
   </body>
 </html>

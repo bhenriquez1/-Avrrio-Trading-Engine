@@ -7,6 +7,14 @@ import { parseTradingMode, type TradingMode } from "./types.js";
  * Safety-critical flags default to the SAFE value. Real trading requires the
  * operator to explicitly opt in via environment variables.
  */
+export interface CoinbaseSafety {
+  tradingEnabled: boolean;
+  maxDailyLossUsd: number;
+  maxPositionUsd: number;
+  maxRiskPerTradeUsd: number;
+  maxOpenPositions: number;
+}
+
 export interface AvrrioConfig {
   topstep: {
     /** "practice" (paper account) or "live". Default practice. */
@@ -17,6 +25,15 @@ export interface AvrrioConfig {
     apiKey: string;
     accountName: string;
     accountId: string;
+  };
+  coinbase: {
+    /** Coinbase Advanced Trade Cloud API key name (organizations/{org}/apiKeys/{id}) */
+    apiKeyName: string;
+    /** EC private key PEM for JWT signing */
+    apiKeySecret: string;
+    /** Sandbox override URL — empty = production */
+    sandboxBaseUrl: string;
+    safety: CoinbaseSafety;
   };
   ai: {
     anthropicApiKey: string;
@@ -233,8 +250,23 @@ export function loadConfig(): AvrrioConfig {
     },
     publicBaseUrl: env("PUBLIC_BASE_URL", "http://localhost:4317"),
     accountTimezone: env("ACCOUNT_TIMEZONE").trim(),
+    coinbase: {
+      apiKeyName: env("COINBASE_API_KEY_NAME"),
+      apiKeySecret: env("COINBASE_API_KEY_SECRET"),
+      sandboxBaseUrl: env("COINBASE_SANDBOX_URL"),
+      safety: {
+        tradingEnabled: bool("COINBASE_TRADING_ENABLED", false),
+        maxDailyLossUsd: num("COINBASE_MAX_DAILY_LOSS", 100),
+        maxPositionUsd: num("COINBASE_MAX_POSITION_USD", 500),
+        maxRiskPerTradeUsd: num("COINBASE_MAX_RISK_PER_TRADE", 50),
+        maxOpenPositions: num("COINBASE_MAX_OPEN_POSITIONS", 3),
+      },
+    },
     // DATA_DIR (canonical) or AVRRIO_DATA_DIR; trim trailing slash for clean joins.
-    dataDir: envAny(["DATA_DIR", "AVRRIO_DATA_DIR"], "data").trim().replace(/\/+$/, "") || "data",
+    dataDir:
+      envAny(["DATA_DIR", "AVRRIO_DATA_DIR"], "data")
+        .trim()
+        .replace(/\/+$/, "") || "data",
     queue: {
       approvalExpiryMinutes: num("NOTIFICATION_EXPIRY_MINUTES", 5),
       entryTriggerTolerancePct: num("EXEC_TRIGGER_TOLERANCE_PCT", 0.001),
@@ -360,6 +392,20 @@ export function configWarnings(
   }
   if (config.safety.killSwitch) {
     warnings.push("KILL_SWITCH is engaged via env — ALL trading is blocked.");
+  }
+  if (config.coinbase.safety.tradingEnabled) {
+    warnings.push(
+      "COINBASE_TRADING_ENABLED is true — Coinbase crypto orders are LIVE.",
+    );
+  } else {
+    warnings.push(
+      "COINBASE_TRADING_ENABLED is false — Coinbase is in paper/read-only mode.",
+    );
+  }
+  if (!config.coinbase.apiKeyName || !config.coinbase.apiKeySecret) {
+    warnings.push(
+      "Coinbase credentials not set (COINBASE_API_KEY_NAME / COINBASE_API_KEY_SECRET) — Coinbase running in demo mode.",
+    );
   }
   if (
     config.notifications.enabled &&

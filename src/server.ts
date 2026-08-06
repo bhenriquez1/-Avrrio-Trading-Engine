@@ -106,6 +106,14 @@ async function start() {
         warnings: engine.warnings(),
         journalStats: engine.journal.stats(),
         safety: engine.config.safety,
+        execution: {
+          liveTradingEnabled: engine.isLiveTradingEnabled(),
+          tradingMode: engine.getTradingMode(),
+        },
+        coinbase: {
+          tradingEnabled: engine.coinbase.tradingEnabled,
+          offline: engine.coinbase.isOffline,
+        },
       });
     }),
   );
@@ -114,9 +122,47 @@ async function start() {
     res.json(engine.recommendations.list());
   });
 
+  // Dashboard shorthand aliases for the approval queue
+  app.get("/api/queue", guard, (_req, res) => {
+    res.json({
+      queue: engine.recommendations
+        .list()
+        .filter((r) => r.status === "pending"),
+    });
+  });
+  app.post(
+    "/api/queue/approve",
+    guard,
+    wrap(async (req, res) => {
+      const { id } = req.body as { id?: string };
+      if (!id) {
+        res.status(400).json({ error: "id required" });
+        return;
+      }
+      res.json(await engine.approve(id, "operator", "immediate", false));
+    }),
+  );
+  app.post(
+    "/api/queue/reject",
+    guard,
+    wrap(async (req, res) => {
+      const { id } = req.body as { id?: string };
+      if (!id) {
+        res.status(400).json({ error: "id required" });
+        return;
+      }
+      res.json(await engine.reject(id, "operator"));
+    }),
+  );
+
   // Live Trade Management — open positions under continuous re-analysis.
   app.get("/api/positions/open", guard, (_req, res) => {
     res.json(engine.recommendations.openPositions());
+  });
+
+  // Dashboard alias: /api/positions returns { positions: [...] }
+  app.get("/api/positions", guard, (_req, res) => {
+    res.json({ positions: engine.recommendations.openPositions() });
   });
 
   app.post(
@@ -125,6 +171,26 @@ async function start() {
     wrap(async (req, res) =>
       res.json(await engine.closePosition(req.params.id ?? "", "operator")),
     ),
+  );
+
+  // Dashboard alias: close by symbol
+  app.post(
+    "/api/orders/close",
+    guard,
+    wrap(async (req, res) => {
+      const { symbol } = req.body as { symbol?: string };
+      if (!symbol) {
+        res.status(400).json({ error: "symbol required" });
+        return;
+      }
+      const positions = engine.recommendations.openPositions();
+      const pos = positions.find((p) => p.symbol === symbol);
+      if (!pos) {
+        res.status(404).json({ error: "no open position for " + symbol });
+        return;
+      }
+      res.json(await engine.closePosition(pos.id, "operator"));
+    }),
   );
 
   app.get(
@@ -173,7 +239,7 @@ async function start() {
           confidence: top.confidence,
         });
       }
-      res.json(results);
+      res.json({ results });
     }),
   );
 
@@ -183,6 +249,50 @@ async function start() {
     "/api/rank",
     guard,
     wrap(async (_req, res) => res.json(await engine.rankMarkets())),
+  );
+
+  // --- market data bars (used by the chart widget) ----------------------
+  app.get(
+    "/api/market/bars/:symbol",
+    guard,
+    wrap(async (req, res) => {
+      const sym = req.params.symbol ?? "";
+      const snap = await engine.snapshot(sym);
+      res.json({ bars: snap.bars });
+    }),
+  );
+
+  // --- Coinbase -----------------------------------------------------------
+  app.get(
+    "/api/coinbase/status",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.coinbaseStatus())),
+  );
+
+  app.get(
+    "/api/coinbase/auth-test",
+    guard,
+    wrap(async (_req, res) => res.json(await engine.coinbaseAuthTest())),
+  );
+
+  app.get(
+    "/api/coinbase/bars/:productId",
+    guard,
+    wrap(async (req, res) => {
+      const productId = decodeURIComponent(req.params.productId ?? "");
+      const bars = await engine.coinbase.getBars(productId, 60);
+      res.json({ bars });
+    }),
+  );
+
+  app.get(
+    "/api/coinbase/quote/:productId",
+    guard,
+    wrap(async (req, res) => {
+      const productId = decodeURIComponent(req.params.productId ?? "");
+      const quote = await engine.coinbase.getQuote(productId);
+      res.json(quote);
+    }),
   );
 
   // --- workflow (protected) --------------------------------------------
